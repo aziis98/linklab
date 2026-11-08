@@ -7,10 +7,12 @@ requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.26",
     "scipy>=1.11",
+    "sympy>=1.14",
 ]
 
-[project.scripts]
-four-bar = "kinematics.examples.four_bar:main"
+[project.optional-dependencies]
+render = ["matplotlib>=3.9"]
+browser = ["playwright>=1.50"]
 
 [build-system]
 requires = ["hatchling"]
@@ -20,7 +22,7 @@ build-backend = "hatchling.build"
 packages = ["src/kinematics"]
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "ruff>=0.14"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

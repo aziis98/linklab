@@ -1,37 +1,33 @@
-import { loadPyodide, type PyodideInterface } from 'pyodide'
-import cadSource from './cad.py?raw'
-
-/** The runtime files are copied to /public/pyodide by scripts/sync-pyodide.mjs. */
-const INDEX_URL = new URL('/pyodide/', location.origin).href
-
-let pending: Promise<PyodideInterface> | null = null
-
-export function initPyodide(): Promise<PyodideInterface> {
-  pending ??= loadPyodide({
-    indexURL: INDEX_URL,
-    packageBaseUrl: 'https://cdn.jsdelivr.net/pyodide/v314.0.7/full/',
-  }).then(async (p) => {
-    try {
-      p.FS.writeFile('/home/pyodide/cad.py', cadSource)
-    } catch {}
-    try {
-      p.FS.writeFile('/lib/python3.14/site-packages/cad.py', cadSource)
-    } catch {}
-    p.runPython(`
-import sys
-if '/home/pyodide' not in sys.path:
-    sys.path.insert(0, '/home/pyodide')
-import cad
-from cad import *
-`)
-    try {
-      await p.loadPackage(['numpy', 'scipy'])
-    } catch (err) {
-      console.warn('Scipy/numpy not loaded in pyodide (offline/cdn):', err)
-    }
-    return p
-  })
-  return pending
+let worker: Worker | null = null;
+let nextId = 0;
+const pending = new Map<
+  number,
+  { resolve: (value: unknown) => void; reject: (reason: Error) => void }
+>();
+export function request<T = unknown>(request: object): Promise<T> {
+  if (!worker) {
+    worker = new Worker(new URL("./pyodide.worker.ts", import.meta.url), {
+      type: "module",
+    });
+    worker.onmessage = ({ data }) => {
+      const entry = pending.get(data.id);
+      pending.delete(data.id);
+      if (data.error) entry?.reject(new Error(data.error));
+      else entry?.resolve(data.result);
+    };
+    worker.onerror = (event) => {
+      stop(new Error(event.message));
+    };
+  }
+  const id = ++nextId;
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve: (value) => resolve(value as T), reject });
+    worker!.postMessage({ id, request });
+  });
 }
-
-export type { PyodideInterface }
+export function stop(reason = new Error("Python execution stopped")) {
+  worker?.terminate();
+  worker = null;
+  for (const entry of pending.values()) entry.reject(reason);
+  pending.clear();
+}
