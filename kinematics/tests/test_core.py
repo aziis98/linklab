@@ -392,3 +392,30 @@ def test_construction_preview_keeps_ground_rigid():
     assert p["configuration"]["g:a"] == e.configuration()["g:a"]
     assert p["configuration"]["g:b"] == e.configuration()["g:b"]
     np.testing.assert_allclose(p["grab"], [2, 3, 0], atol=1e-12)
+
+
+def test_concentric_rings_have_two_planar_dofs():
+    from pathlib import Path
+
+    source = (
+        Path(__file__).parents[1] / "src/kinematics/examples/concentric_rings.py"
+    ).read_text()
+    scene = build_scene(source)
+    e = Engine(scene)
+    assert scene.dimension == 2
+    assert e.mobility()["first_order"] == 2
+    assert e.mobility()["linear_compatible_dimension"] == 2
+    before = e.configuration()
+    keys = ["inner:origin", "inner:x", "inner:y"]
+    targets = [(np.array(before[k]) + [0.2, 0.15, 0]).tolist() for k in keys]
+    e.drag(keys, targets, weights=[0.3, 0.4, 0.3])
+    assert e.error(e.current) < 1e-9
+    assert np.linalg.norm(e.current - e.initial) > 0.01
+    for name in ("origin", "x", "y"):
+        np.testing.assert_allclose(
+            e.configuration()[f"outer:{name}"], before[f"outer:{name}"], atol=1e-10
+        )
+    p = e.configuration()
+    c = np.array(p["inner:origin"])
+    assert np.linalg.norm(np.array(p["inner:x"]) - c) == pytest.approx(1.5, abs=1e-8)
+    assert np.linalg.norm(np.array(p["inner:y"]) - c) == pytest.approx(1.5, abs=1e-8)

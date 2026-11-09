@@ -28,6 +28,46 @@ const write = (key: string, value: unknown) => {
 
 export const BENCHMARK_EXAMPLES = [
   {
+    name: "concentric-rings-3d.py",
+    body: `# Top and bottom braces fix the diameter; the inner ring rotates around it.
+scene_dimension(3)
+outer = ring(origin, 3, id="outer", fixed=True)
+inner = ring(origin, 1.5, id="inner")
+bar_top = rod(outer.top, inner.top)
+bar_bottom = rod(outer.bottom, inner.bottom)
+
+coincident(outer.top, bar_top.start)
+coincident(bar_top.end, inner.top)
+
+coincident(outer.bottom, bar_bottom.start)
+coincident(bar_bottom.end, inner.bottom)
+`,
+  },
+  {
+    name: "spatial-linked-pendulum.py",
+    body: `# Spatial linked pendulum: a circular joint orbit plus a freely swinging rod.
+scene_dimension(3)
+a = rod(left, up, id="a")
+b = rod(right, up, id="b")
+c = rod(up, up * 2, id="c")
+pin(a.start)
+pin(b.start)
+coincident(a.end, b.end)
+coincident(a.end, c.start)
+# Three DOFs: one for the shared joint, two for the direction of c. Try Wander.
+`,
+  },
+  {
+    name: "spatial-rotor.py",
+    body: `# A tetrahedral rotor on a spherical joint: three rotational DOFs.
+scene_dimension(3)
+stand = rod(down * 0.6, origin, id="stand", fixed=True)
+rotor = body({}, id="rotor")
+pin(rotor.point("origin"), origin, id="spherical_joint")
+# Click Wander. The rotor turns freely around its fixed corner in all 3 axes.
+`,
+  },
+  {
     name: "planar-4-bar-v2.py",
     body: `# Planar 4-Bar Linkage
 l1 = 2.0
@@ -94,7 +134,18 @@ ground = rod(left, right, id="base", fixed=True)
 arm = rod(origin, Vec(1, 0, 1), id="arm")
 pin(arm.start, origin)
 plane(arm, origin, up)
-# Rotate the camera with Alt-drag. Select XZ as the drag plane.
+# Drag the background to orbit; Shift-drag to pan. Object drags use the view plane.
+`,
+  },
+  {
+    name: "concentric-rings.py",
+    body: `# Two rings joined by a hinged bar: 2 planar DOFs
+scene_dimension(2)
+outer = ring(origin, 3, id="outer", fixed=True)
+inner = ring(origin, 1.5, id="inner")
+bar = rod(outer.top, inner.top, id="bar")
+coincident(outer.top, bar.start, id="outer_hinge")
+coincident(bar.end, inner.top, id="inner_hinge")
 `,
   },
 ];
@@ -111,7 +162,23 @@ export const createFile = (name: string, body = ""): FileEntry => ({
 });
 
 export const ensureExamples = (files: FileEntry[]): FileEntry[] => {
-  const updated = files;
+  const previousRotor = `# A tetrahedral rotor on a spherical joint: three rotational DOFs.
+scene_dimension(3)
+base = ring(Vec(0, 0, -0.4), 1.1, id="base", fixed=True)
+stand = rod(Vec(0, 0, -0.4), origin, id="stand", fixed=True)
+rotor = body({}, id="rotor")
+pin(rotor.point("origin"), origin, id="spherical_joint")
+# Click Wander. The rotor turns freely around its fixed corner in all 3 axes.
+`;
+  const updated = files.map((file) =>
+    file.name === "spatial-rotor.py" &&
+    file.body.trim() === previousRotor.trim()
+      ? {
+          ...file,
+          body: BENCHMARK_EXAMPLES.find((e) => e.name === file.name)!.body,
+        }
+      : file,
+  );
   const existingNames = new Set(updated.map((f) => f.name));
   const now = Date.now();
   const missing = BENCHMARK_EXAMPLES.filter(

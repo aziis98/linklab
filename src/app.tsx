@@ -203,6 +203,7 @@ export function App() {
         left={
           <section class="pane">
             <Editor
+              key={active?.id ?? "empty"}
               value={active?.body ?? ""}
               onChange={(body) => active && patch(active.id, body)}
               onRun={run}

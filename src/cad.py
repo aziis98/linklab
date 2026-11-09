@@ -14,3 +14,5 @@ parallel = scene.parallel
 plane = scene.plane
 def scene_dimension(value):
     scene.dimension = value
+
+ring = scene.ring

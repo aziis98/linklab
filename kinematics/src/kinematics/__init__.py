@@ -16,6 +16,7 @@ __all__ = [
     "Circle",
     "Constraint",
     "Engine",
+    "Exploration",
     "Line",
     "Plane",
     "PointRef",
@@ -24,10 +25,14 @@ __all__ = [
     "Segment",
     "Session",
     "Sphere",
+    "TourPreparation",
     "Vec",
+    "Wander",
     "build_scene",
     "intersect",
     "render_png",
 ]
 
+from .core.exploration import Exploration, TourPreparation
 from .core.geometry import Circle, Line, Plane, Segment, Sphere, intersect
+from .core.wander import Wander

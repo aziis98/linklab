@@ -16,6 +16,22 @@ def render_png(scene, configuration, path, camera=(35, 25), overlays=()):
     ax.set_facecolor("#090d16")
     for obj in scene.objects:
         pts = [np.array(configuration[f"{obj.id}:{name}"]) for name in obj.points]
+        if obj.kind == "ring":
+            center = np.array(configuration[f"{obj.id}:origin"])
+            right = np.array(configuration[f"{obj.id}:x"]) - center
+            top = np.array(configuration[f"{obj.id}:y"]) - center
+            angles = np.linspace(0, 2 * np.pi, 129)
+            circle = (
+                center[:, None]
+                + right[:, None] * np.cos(angles)
+                + top[:, None] * np.sin(angles)
+            )
+            ax.plot(
+                *circle[: scene.dimension],
+                color="#64748b" if obj.fixed else "#38bdf8",
+                linewidth=3,
+            )
+            continue
         for a, b in combinations(pts, 2):
             values = np.array([a, b]).T
             ax.plot(

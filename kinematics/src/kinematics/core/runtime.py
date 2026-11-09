@@ -3,12 +3,13 @@
 import json
 
 import numpy as np
-from scipy.linalg import null_space
 
 from .engine import Engine
+from .exploration import Exploration, TourPreparation
 from .model import build_scene
 from .preview import preview
 from .topology import Unsupported, analyze
+from .wander import Wander
 
 
 class Session:
@@ -17,9 +18,17 @@ class Session:
         self.cells = []
         self.status = {}
         self.revision = 0
+        self.exploration = None
+        self.exploration_serial = 0
+        self.tour_job = None
+        self.wander_job = None
+        self.wander_serial = 0
 
     def run(self, source, dimension=None, mode="numerical"):
         self.revision += 1
+        self.exploration = None
+        self.tour_job = None
+        self.wander_job = None
         self.engine = Engine(build_scene(source, dimension))
         self.engine.assemble()
         self.cells = []
@@ -41,14 +50,16 @@ class Session:
                 "complete": False,
             }
         if not self.cells:
-            self.cells = self.explore()
+            self.cells = self.initial_motion()
         self.update_orbits()
         return self.snapshot()
 
     def update_orbits(self):
         for cell in self.cells:
             cell["orbits"] = {
-                o.id: np.mean(
+                o.id: [cfg[f"{o.id}:origin"] for cfg in cell["configurations"]]
+                if o.kind == "ring"
+                else np.mean(
                     [
                         [cfg[f"{o.id}:{n}"] for n in o.points]
                         for cfg in cell["configurations"]
@@ -58,87 +69,16 @@ class Session:
                 for o in self.engine.scene.objects
             }
 
-    def explore(self):
-        e = self.engine
-        initial = e.current.copy()
-        m = e.mobility()
-        if not m["first_order"] or m["second_order"] == "locked":
-            return [
-                {
-                    "dimension": 0,
-                    "closed": False,
-                    "configurations": [e.configuration()],
-                    "witness": e.configuration(),
-                    "certificate": None,
-                }
-            ]
-        if m["linear_compatible_dimension"] > 1:
-            return [
-                {
-                    "dimension": m["linear_compatible_dimension"],
-                    "closed": False,
-                    "configurations": [e.configuration()],
-                    "witness": e.configuration(),
-                    "certificate": None,
-                }
-            ]
-        paths = []
-        for sign in (-1, 1):
-            x = initial.copy()
-            tangent = (
-                np.array(e.mobility(x)["linear_compatible_tangents"])
-                .reshape(-1, x.size)
-                .T[:, 0]
-                * sign
-            )
-            path = [e.configuration(x)]
-            closed = False
-            step = 0.015 * e.scale
-            for _ in range(240):
-                T = (
-                    np.array(e.mobility(x)["linear_compatible_tangents"])
-                    .reshape(-1, x.size)
-                    .T
-                )
-                if T.shape[1] != 1:
-                    break
-                v = T[:, 0]
-                v *= 1 if v @ tangent >= 0 else -1
-                try:
-                    candidate = e.project(x + step * v.reshape(-1, e.d))
-                except ValueError:
-                    break
-                if (
-                    np.linalg.norm(candidate - x) > 2 * step
-                    or np.linalg.norm(candidate - x) < step * 0.1
-                ):
-                    break
-                x = candidate
-                tangent = v
-                path.append(e.configuration(x))
-                if (
-                    len(path) > 12
-                    and np.linalg.norm(x - initial) < step
-                    and np.dot(
-                        v, null_space(e.jac(initial.ravel()), rcond=1e-8)[:, 0] * sign
-                    )
-                    > 0.9
-                ):
-                    path.append(e.configuration(initial))
-                    closed = True
-                    break
-            paths.append(
-                {
-                    "dimension": 1,
-                    "closed": closed,
-                    "configurations": path,
-                    "witness": path[0],
-                    "certificate": None,
-                }
-            )
-            if closed:
-                break
-        return paths
+    def initial_motion(self):
+        return [
+            {
+                "dimension": self.engine.mobility()["linear_compatible_dimension"],
+                "closed": False,
+                "configurations": [self.engine.configuration()],
+                "witness": self.engine.configuration(),
+                "certificate": None,
+            }
+        ]
 
     def snapshot(self):
         e = self.engine
@@ -179,14 +119,20 @@ class Session:
             raise ValueError(
                 "reassembly is a numerical operation; use the certified component selector"
             )
+        self.exploration = None
+        self.tour_job = None
+        self.wander_job = None
         result = self.engine.reassemble(keys, targets, weights)
-        self.cells = self.explore()
+        self.cells = self.initial_motion()
         self.update_orbits()
         return {**self.snapshot(), "reachable": result["reachable"]}
 
     def select(self, index):
         if self.status.get("status") != "certified":
             raise ValueError("component selection requires certified topology")
+        self.exploration = None
+        self.tour_job = None
+        self.wander_job = None
         c = self.cells[index]
         self.engine.current = self.engine.project(
             np.array([c["witness"][k][: self.engine.d] for k in self.engine.keys])
@@ -205,6 +151,114 @@ class Session:
             )
         if message.get("revision", self.revision) != self.revision:
             raise ValueError("stale scene request")
+        if op == "wander_start":
+            live = Engine(self.engine.scene)
+            live.current = self.engine.current.copy()
+            if "configuration" in message:
+                live.current = live.project(
+                    np.array([message["configuration"][k][: live.d] for k in live.keys])
+                )
+            self.wander_job = None
+            job = Wander(live, **message.get("settings", {}))
+            self.wander_serial += 1
+            job.job_id = self.wander_serial
+            self.wander_job = job
+            return {
+                "job_id": job.job_id,
+                "frames": [{"configuration": job.engine.configuration(), "time": 0.0}],
+                "status": job.status,
+                "reason": job.reason,
+            }
+        if op.startswith("wander_"):
+            if self.wander_job is None:
+                raise ValueError("Wander invalidated; start a new walk")
+            if message.get("job_id") != self.wander_job.job_id:
+                raise ValueError("stale wander job")
+            if op == "wander_step":
+                return self.wander_job.advance()
+            if op == "wander_cancel":
+                self.wander_job = None
+                return {"status": "cancelled"}
+        if op == "explore_start":
+            self.exploration_serial += 1
+            self.tour_job = None
+            self.exploration = Exploration(self.engine, **message.get("settings", {}))
+            self.exploration.job_id = self.exploration_serial
+            return self.exploration.snapshot()
+        if (
+            op.startswith("explore_")
+            and op != "explore_start"
+            and self.exploration is None
+        ):
+            raise ValueError("Exploration invalidated; start a new exploration")
+        if (
+            op.startswith("explore_")
+            and message.get("job_id", self.exploration.job_id)
+            != self.exploration.job_id
+        ):
+            raise ValueError("stale exploration job")
+        if op == "explore_pause":
+            self.exploration.pause()
+            return self.exploration.snapshot()
+        if op == "explore_cancel":
+            self.tour_job = None
+            self.exploration.cancel()
+            return self.exploration.snapshot()
+        if op == "explore_refine":
+            self.exploration.refine(message["spacing"])
+            return self.exploration.snapshot()
+        if op == "explore_step":
+            self.exploration.advance()
+            return self.exploration.snapshot(
+                message.get("node_cursor"), message.get("edge_cursor", 0)
+            )
+        if op == "explore_extend":
+            self.exploration.seconds += 30
+            self.exploration.limit += 2000
+            return self.exploration.snapshot()
+        if op == "explore_tour_start":
+            self.exploration.attach(self.engine.current)
+            self.tour_job = TourPreparation(
+                self.exploration, message.get("count", 16), message.get("seed", 0)
+            )
+            return {
+                **self.tour_job.result,
+                "frames": [self.tour_job.coarse[0]],
+                "duration": 45.0,
+                "graph": self.exploration.snapshot(),
+            }
+        if op == "explore_tour_step":
+            if (
+                self.tour_job is None
+                or self.tour_job.exploration is not self.exploration
+            ):
+                raise ValueError("Tour preparation invalidated")
+            return self.tour_job.advance()
+        if op == "explore_tour":
+            return self.exploration.tour(
+                message.get("count", 16), message.get("seed", 0)
+            )
+        if op == "adopt":
+            candidate = np.array(
+                [
+                    message["configuration"][k][: self.engine.d]
+                    for k in self.engine.keys
+                ],
+                dtype=float,
+            )
+            if not np.isfinite(candidate).all():
+                raise ValueError("Configuration contains non-finite coordinates")
+            # Cached animation poses are already corrected. Reprojecting a feasible
+            # singular pose can drift into fictitious first-order flex directions.
+            self.engine.current = (
+                candidate
+                if self.engine.error(candidate) <= 1e-9
+                else self.engine.project(candidate)
+            )
+            return {
+                "configuration": self.engine.configuration(),
+                "mobility": self.engine.mobility(),
+            }
         if op == "drag":
             result = self.drag(
                 message["keys"], message["targets"], message.get("weights")
@@ -220,6 +274,9 @@ class Session:
         if op == "select":
             return self.select(message["index"])
         if op == "reset":
+            self.exploration = None
+            self.tour_job = None
+            self.wander_job = None
             self.engine.current = self.engine.project(self.engine.initial)
             return self.snapshot()
         raise ValueError(f"unknown operation {op}")

@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+from browser_editor import fill_editor
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "kinematics" / "src"))
@@ -36,6 +37,9 @@ with sync_playwright() as p:
 
     page.goto(args.url)
     page.locator(".viewer strong").filter(has_text="numerical").wait_for(timeout=90000)
+    fill_editor(page, (examples / "collinear.py").read_text())
+    page.get_by_role("button", name="Run", exact=True).click()
+    page.locator(".viewer strong").filter(has_text="numerical").wait_for()
     choose("Solver mode", "Topological")
     page.locator(".viewer strong").filter(has_text="certified").wait_for(timeout=60000)
     for name in ["collinear", "triangle", "mixed", "four_bar", "spatial"]:
@@ -47,7 +51,7 @@ with sync_playwright() as p:
                 "!document.querySelector('button.btn--primary').disabled", timeout=60000
             )
         source = (examples / f"{name}.py").read_text()
-        page.locator("textarea").fill(source)
+        fill_editor(page, source)
         page.get_by_role("button", name="Run", exact=True).click()
         status = "fallback" if name == "spatial" else "certified"
         page.locator(".viewer strong").filter(has_text=status).wait_for(timeout=60000)
@@ -90,7 +94,9 @@ with sync_playwright() as p:
                 assert page.locator("[data-grid-plane]").count() == 1
                 assert page.locator(f'[data-grid-plane="{view}"]').count() == 1
                 assert page.locator('[data-grid-view="spatial"]').count() == 0
-            choose("Drag plane", "XZ")
+            assert (
+                page.get_by_role("button", name="Drag plane", exact=True).count() == 0
+            )
         page.screenshot(path=str(Path(args.output) / f"browser-{name}.png"))
         print(name, status, "native/Pyodide parity OK")
     choose("Scene dimension", "Auto dimension")
@@ -100,7 +106,7 @@ with sync_playwright() as p:
     choose("Solver mode", "Numerical")
     page.locator(".viewer strong").filter(has_text="numerical").wait_for(timeout=60000)
     source = (examples / "triangle.py").read_text()
-    page.locator("textarea").fill(source)
+    fill_editor(page, source)
     page.get_by_role("button", name="Run", exact=True).click()
     page.locator(".viewer strong").filter(has_text="numerical").wait_for(timeout=60000)
     assert (
@@ -131,16 +137,16 @@ with sync_playwright() as p:
     )
     page.screenshot(path=str(Path(args.output) / "browser-object-ghost.png"))
     page.mouse.up()
-    # Shift-drag explicitly changes assembly mode; ordinary dragging above stays feasible.
+    # Alt-drag explicitly changes assembly mode; ordinary dragging above stays feasible.
     joint = page.locator('[data-point="r1:b"]')
     box = joint.bounding_box()
     x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
-    page.keyboard.down("Shift")
+    page.keyboard.down("Alt")
     page.mouse.move(x, y)
     page.mouse.down()
     page.mouse.move(x, y + 380, steps=10)
     page.mouse.up()
-    page.keyboard.up("Shift")
+    page.keyboard.up("Alt")
     page.wait_for_function(
         "!document.body.textContent.includes('Reassembling near the ghost')",
         timeout=60000,
@@ -165,7 +171,9 @@ with sync_playwright() as p:
     page.keyboard.press("ArrowDown")
     page.get_by_role("listbox", name="Scene dimension").wait_for()
     page.keyboard.press("Escape")
-    assert trigger.get_attribute("aria-expanded") == "false"
+    page.wait_for_function(
+        "document.querySelector('button[aria-label=\"Scene dimension\"]').getAttribute('aria-expanded')==='false'"
+    )
     page.get_by_role("button", name="Solver mode", exact=True).click()
     page.screenshot(path=str(Path(args.output) / "browser-dropdown.png"))
     page.keyboard.press("Escape")
@@ -173,10 +181,10 @@ with sync_playwright() as p:
         "Object ghost, grabbed point, numerical reassembly, auto dimension, and custom dropdown checks passed"
     )
     assert not errors, errors
-    page.locator("textarea").fill("while True: pass")
+    fill_editor(page, "while True: pass")
     page.get_by_role("button", name="Run", exact=True).click()
     page.wait_for_timeout(400)
     page.get_by_role("button", name="Stop", exact=True).click()
     page.wait_for_function("!document.querySelector('button.btn--primary').disabled")
     browser.close()
-    print("UI drag, orbits, camera, plane selection, and Stop checks passed")
+    print("UI drag, orbits, camera presets, and Stop checks passed")

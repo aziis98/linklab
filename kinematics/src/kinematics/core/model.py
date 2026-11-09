@@ -83,6 +83,10 @@ class RigidObject:
     kind: str = "body"
 
     def point(self, name: str) -> PointRef:
+        if self.kind == "ring" and name == "bottom" and name not in self.points:
+            self.points[name] = tuple(
+                2 * c - top for c, top in zip(self.points["origin"], self.points["y"])
+            )
         return PointRef(self.id, name, Vec(*self.points[name]))
 
     def axis(self, name: str = "x") -> tuple[PointRef, PointRef]:
@@ -91,6 +95,18 @@ class RigidObject:
             if self.kind == "rod"
             else (self.point("origin"), self.point(name))
         )
+
+    @property
+    def top(self):
+        return self.point("y")
+
+    @property
+    def bottom(self):
+        return self.point("bottom")
+
+    @property
+    def center(self):
+        return self.point("origin")
 
     @property
     def start(self):
@@ -182,6 +198,25 @@ class Scene:
         self.objects.append(obj)
         return obj
 
+    def ring(self, center, radius, id=None, fixed=False) -> RigidObject:
+        radius = exact(radius)
+        if radius <= 0:
+            raise ValueError("ring radius must be positive")
+        center = vec(center)
+        ident = id or f"ring{len(self.objects) + 1}"
+        if any(o.id == ident for o in self.objects):
+            raise ValueError(f"duplicate object: {ident}")
+        points = {
+            "origin": coords(center),
+            "x": coords(center + Vec(radius, 0, 0)),
+            "y": coords(center + Vec(0, radius, 0)),
+        }
+        if self.dimension == 2 and any(p[2] != 0 for p in points.values()):
+            raise ValueError("use dimension=3 for spatial geometry")
+        obj = RigidObject(ident, points, fixed, "ring")
+        self.objects.append(obj)
+        return obj
+
     def coincident(self, a, b, id=None):
         if not isinstance(a, PointRef):
             a, b = b, a
@@ -199,8 +234,8 @@ class Scene:
         self.constraints.append(c)
         return c
 
-    def pin(self, a, pos, id=None):
-        return self.coincident(a, pos, id)
+    def pin(self, a, pos=None, id=None):
+        return self.coincident(a, a.pos if pos is None else pos, id)
 
     def distance(
         self, a: PointRef, b: PointRef, length: Scalar, id: str | None = None
@@ -367,6 +402,7 @@ def build_scene(source: str, dimension: int | None = None) -> Scene:
     env.update(
         scene=scene,
         rod=scene.rod,
+        ring=scene.ring,
         body=scene.body,
         pin=scene.pin,
         coincident=scene.coincident,

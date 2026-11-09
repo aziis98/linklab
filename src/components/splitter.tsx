@@ -4,6 +4,7 @@ import type { ComponentChildren } from 'preact'
 const KEY = 'cad-detect-free-motions.split.v1'
 const MIN = 15
 const MAX = 85
+const DEFAULT = 100 / 3
 
 interface Props {
   initial?: number
@@ -16,7 +17,7 @@ export function Split({ initial, left, right }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const sep = useRef<HTMLDivElement>(null)
   const [pct, setPct] = useState(
-    () => Number(localStorage.getItem(KEY)) || initial || 50,
+    () => Number(localStorage.getItem(KEY)) || initial || DEFAULT,
   )
   const [dragging, setDragging] = useState(false)
 
@@ -87,7 +88,7 @@ export function Split({ initial, left, right }: Props) {
       setPct(MAX)
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      setPct(initial || 50)
+      setPct(initial || DEFAULT)
     }
   }
 

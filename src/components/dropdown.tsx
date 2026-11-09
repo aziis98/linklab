@@ -21,7 +21,13 @@ export function Dropdown({ label, value, options, onChange, disabled }: Props) {
   const menu = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
-  const [position, setPosition] = useState({ left: 0, top: 0, width: 160 });
+  const [position, setPosition] = useState<{
+    left: number;
+    top?: number;
+    bottom?: number;
+    width: number;
+    maxHeight: number;
+  }>({ left: 0, top: 0, width: 160, maxHeight: 240 });
   const chosen = options.find((o) => o.value === value);
   function close(restore = false) {
     setOpen(false);
@@ -31,10 +37,17 @@ export function Dropdown({ label, value, options, onChange, disabled }: Props) {
     if (disabled) return;
     const rect = trigger.current!.getBoundingClientRect();
     const width = Math.max(160, rect.width);
+    const below = innerHeight - rect.bottom - 12,
+      above = rect.top - 12;
+    const opensAbove =
+      below < Math.min(240, options.length * 30 + 10) && above > below;
     setPosition({
       left: Math.max(8, Math.min(rect.left, innerWidth - width - 8)),
-      top: rect.bottom + 4,
+      ...(opensAbove
+        ? { bottom: innerHeight - rect.top + 4 }
+        : { top: rect.bottom + 4 }),
       width,
+      maxHeight: Math.max(1, Math.min(240, opensAbove ? above : below)),
     });
     const selected = options.findIndex((o) => o.value === value && !o.disabled);
     setActive(
@@ -153,13 +166,7 @@ export function Dropdown({ label, value, options, onChange, disabled }: Props) {
             aria-label={label}
             aria-activedescendant={`${id}-${active}`}
             onKeyDown={key}
-            style={{
-              ...position,
-              maxHeight: Math.max(
-                80,
-                Math.min(240, innerHeight - position.top - 8),
-              ),
-            }}
+            style={position}
           >
             {options.map((option, index) => (
               <div
