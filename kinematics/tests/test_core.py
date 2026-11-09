@@ -138,6 +138,7 @@ def test_scene_round_trip():
     from kinematics import Scene
 
     scene = build_scene(MIXED)
+    assert scene.objects[0].source_span is not None
     restored = Scene.from_dict(json.loads(json.dumps(scene.to_dict())))
     np.testing.assert_equal(Engine(restored).initial, Engine(scene).initial)
     assert restored.to_dict() == scene.to_dict()

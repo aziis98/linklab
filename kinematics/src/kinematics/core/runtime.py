@@ -86,11 +86,23 @@ class Session:
             "revision": self.revision,
             "dimension": e.d,
             "objects": [
-                {"id": o.id, "kind": o.kind, "fixed": o.fixed, "points": list(o.points)}
+                {
+                    "id": o.id,
+                    "kind": o.kind,
+                    "fixed": o.fixed,
+                    "points": list(o.points),
+                    **({"source_span": list(o.source_span)} if o.source_span else {}),
+                }
                 for o in e.scene.objects
             ],
             "constraints": [
-                {"id": c.id, "kind": c.kind, "a": c.a, "b": c.b}
+                {
+                    "id": c.id,
+                    "kind": c.kind,
+                    "a": c.a,
+                    "b": c.b,
+                    **({"source_span": list(c.source_span)} if c.source_span else {}),
+                }
                 for c in e.scene.constraints
             ],
             "configuration": e.configuration(),

@@ -8,12 +8,16 @@ export interface ConstructionPick {
   keys: string[];
   edge?: [string, string];
   ring?: boolean;
+  objectId?: string;
+  matchIds?: string[];
 }
 type Config = Record<string, Vec3>;
 interface Props {
   scene: SceneData;
   configuration: Config;
   camera: CameraSettings;
+  highlightElementId?: string | null;
+  onHoverElement?: (id: string | null) => void;
   onStart: (event: PointerEvent, pick: ConstructionPick) => void;
   onMove: (event: PointerEvent) => void;
   onEnd: (event: PointerEvent) => void;
@@ -32,10 +36,18 @@ class ConstructionRenderer {
   sphere = new THREE.SphereGeometry(1, 16, 12);
   materials = {
     rod: new THREE.MeshPhongMaterial({ shininess: 35 }),
+    rodActive: new THREE.MeshPhongMaterial({ shininess: 40 }),
     ground: new THREE.MeshPhongMaterial({ shininess: 20 }),
+    groundActive: new THREE.MeshPhongMaterial({ shininess: 25 }),
     joint: new THREE.MeshPhongMaterial({ shininess: 45 }),
+    jointActive: new THREE.MeshPhongMaterial({ shininess: 50 }),
     pin: new THREE.MeshPhongMaterial({ shininess: 30 }),
+    pinActive: new THREE.MeshPhongMaterial({ shininess: 35 }),
   };
+  meshMetadata = new Map<
+    THREE.Mesh,
+    { baseMaterial: THREE.MeshPhongMaterial; activeMaterial: THREE.MeshPhongMaterial; matchIds: string[] }
+  >();
   edges: { a: string; b: string; cylinder: THREE.Mesh; ends: THREE.Mesh[] }[] =
     [];
   joints: { key: string; mesh: THREE.Mesh }[] = [];
@@ -67,9 +79,10 @@ class ConstructionRenderer {
     );
     for (const object of scene.objects) {
       const keys = object.points.map((p) => `${object.id}:${p}`);
-      const material = object.fixed
-        ? this.materials.ground
-        : this.materials.rod;
+      const baseMat = object.fixed ? this.materials.ground : this.materials.rod;
+      const activeMat = object.fixed
+        ? this.materials.groundActive
+        : this.materials.rodActive;
       if (object.kind === "ring") {
         const c = new THREE.Vector3(
           ...scene.configuration[`${object.id}:origin`],
@@ -79,20 +92,52 @@ class ConstructionRenderer {
         ).distanceTo(c);
         const mesh = new THREE.Mesh(
           new THREE.TorusGeometry(1, this.radius / radius, 10, 64),
-          material,
+          baseMat,
         );
-        this.addMesh(mesh, { keys, ring: true });
+        this.addMesh(
+          mesh,
+          { keys, ring: true, objectId: object.id, matchIds: [object.id, `${object.id}:ring`] },
+          baseMat,
+          activeMat,
+          [object.id, `${object.id}:ring`],
+        );
         this.rings.push({ id: object.id, mesh, radius });
       } else {
         keys.forEach((a, i) =>
           keys.slice(i + 1).forEach((b) => {
-            const pick: ConstructionPick = { keys, edge: [a, b] };
-            const cylinder = new THREE.Mesh(this.cylinder, material);
+            const matchIds = [object.id, `${a}|${b}`];
+            const pick: ConstructionPick = {
+              keys,
+              edge: [a, b],
+              objectId: object.id,
+              matchIds,
+            };
+            const cylinder = new THREE.Mesh(this.cylinder, baseMat);
+            const aConstraints = scene.constraints
+              .filter((c) => c.a === a || c.b === a)
+              .map((c) => c.id);
+            const bConstraints = scene.constraints
+              .filter((c) => c.a === b || c.b === b)
+              .map((c) => c.id);
             const ends = [
-              new THREE.Mesh(this.sphere, material),
-              new THREE.Mesh(this.sphere, material),
+              new THREE.Mesh(this.sphere, baseMat),
+              new THREE.Mesh(this.sphere, baseMat),
             ];
-            for (const mesh of [cylinder, ...ends]) this.addMesh(mesh, pick);
+            this.addMesh(cylinder, pick, baseMat, activeMat, matchIds);
+            this.addMesh(
+              ends[0],
+              pick,
+              baseMat,
+              activeMat,
+              [...aConstraints, ...matchIds, a],
+            );
+            this.addMesh(
+              ends[1],
+              pick,
+              baseMat,
+              activeMat,
+              [...bConstraints, ...matchIds, b],
+            );
             this.edges.push({ a, b, cylinder, ends });
           }),
         );
@@ -103,15 +148,27 @@ class ConstructionRenderer {
           !scene.constraints.some((c) => c.a === key || c.b === key)
         )
           continue;
-        const mesh = new THREE.Mesh(
-          this.sphere,
-          object.fixed
-            ? this.materials.ground
-            : pinned.has(key)
-              ? this.materials.pin
-              : this.materials.joint,
+        const relatedConstraints =
+          scene.constraints.filter((c) => c.a === key || c.b === key);
+        const matchIds = [...relatedConstraints.map((c) => c.id), object.id, key];
+        const jointBaseMat = object.fixed
+          ? this.materials.ground
+          : pinned.has(key)
+            ? this.materials.pin
+            : this.materials.joint;
+        const jointActiveMat = object.fixed
+          ? this.materials.groundActive
+          : pinned.has(key)
+            ? this.materials.pinActive
+            : this.materials.jointActive;
+        const mesh = new THREE.Mesh(this.sphere, jointBaseMat);
+        this.addMesh(
+          mesh,
+          { keys: [key], objectId: object.id, matchIds },
+          jointBaseMat,
+          jointActiveMat,
+          matchIds,
         );
-        this.addMesh(mesh, { keys: [key] });
         this.joints.push({ key, mesh });
       }
       const label = document.createElement("span");
@@ -123,10 +180,17 @@ class ConstructionRenderer {
     }
     this.recolor(canvas);
   }
-  addMesh(mesh: THREE.Mesh, pick: ConstructionPick) {
+  addMesh(
+    mesh: THREE.Mesh,
+    pick: ConstructionPick,
+    baseMaterial: THREE.MeshPhongMaterial,
+    activeMaterial: THREE.MeshPhongMaterial,
+    matchIds: string[],
+  ) {
     this.world.add(mesh);
     this.pickables.push(mesh);
     this.picks.set(mesh, pick);
+    this.meshMetadata.set(mesh, { baseMaterial, activeMaterial, matchIds });
   }
   recolor(canvas: HTMLCanvasElement) {
     const css = getComputedStyle(canvas);
@@ -134,16 +198,40 @@ class ConstructionRenderer {
       new THREE.Color(css.getPropertyValue(token).trim());
     const background = color("--cad-bg");
     const dark = background.getHSL({ h: 0, s: 0, l: 0 }).l < 0.3;
+    const accent = color("--accent");
+
     this.materials.rod.color
       .copy(color("--cad-rod-stroke"))
       .lerp(background, dark ? 0.25 : 0.68);
+    this.materials.rodActive.color
+      .copy(this.materials.rod.color)
+      .lerp(accent, 0.45);
+
     this.materials.ground.color
       .copy(color("--cad-ground-stroke"))
       .lerp(background, 0.45);
+    this.materials.groundActive.color
+      .copy(this.materials.ground.color)
+      .lerp(accent, 0.45);
+
     this.materials.joint.color.copy(color("--cad-joint-ring"));
+    this.materials.jointActive.color
+      .copy(this.materials.joint.color)
+      .lerp(accent, 0.55);
+
     this.materials.pin.color.copy(color("--cad-joint-pin"));
+    this.materials.pinActive.color
+      .copy(this.materials.pin.color)
+      .lerp(accent, 0.55);
   }
-  update(configuration: Config, settings: CameraSettings) {
+  setHighlight(highlightId: string | null) {
+    for (const [mesh, meta] of this.meshMetadata) {
+      const active =
+        highlightId != null && meta.matchIds.includes(highlightId);
+      mesh.material = active ? meta.activeMaterial : meta.baseMaterial;
+    }
+  }
+  update(configuration: Config, settings: CameraSettings, highlightId: string | null = null) {
     if (settings.size.some((value, i) => value !== this.viewport[i])) {
       this.renderer.setSize(settings.size[0], settings.size[1], false);
       this.viewport = [...settings.size];
@@ -166,7 +254,10 @@ class ConstructionRenderer {
     }
     for (const { key, mesh } of this.joints) {
       mesh.position.set(...configuration[key]);
-      mesh.scale.setScalar(r * 1.4);
+      const meta = this.meshMetadata.get(mesh);
+      const active =
+        highlightId != null && (meta?.matchIds.includes(highlightId) ?? false);
+      mesh.scale.setScalar(r * (active ? 1.7 : 1.4));
     }
     for (const { id, mesh, radius } of this.rings) {
       const c = new THREE.Vector3(...configuration[`${id}:origin`]);
@@ -202,7 +293,15 @@ class ConstructionRenderer {
         x > settings.size[0] ||
         y > settings.size[1];
       element.style.transform = `translate(${x + 10}px,${y - 12}px)`;
+      if (highlightId === object.id) {
+        element.style.color = "var(--accent)";
+        element.style.fontWeight = "bold";
+      } else {
+        element.style.color = "";
+        element.style.fontWeight = "";
+      }
     }
+    this.setHighlight(highlightId);
     this.world.updateMatrixWorld(true);
     this.renderer.render(this.world, this.camera);
     this.renderer.domElement.dataset.meshCount = String(this.pickables.length);
@@ -246,7 +345,11 @@ export default function ThreeConstruction(props: Props) {
         props.scene,
         props.camera.extent,
       );
-      runtime.current.update(props.configuration, props.camera);
+      runtime.current.update(
+        props.configuration,
+        props.camera,
+        props.highlightElementId ?? null,
+      );
     } catch (error) {
       runtime.current?.dispose();
       runtime.current = null;
@@ -259,6 +362,7 @@ export default function ThreeConstruction(props: Props) {
       runtime.current?.update(
         latest.current.configuration,
         latest.current.camera,
+        latest.current.highlightElementId ?? null,
       );
     };
     const lost = (event: Event) => {
@@ -275,7 +379,11 @@ export default function ThreeConstruction(props: Props) {
     };
   }, [props.scene.revision]);
   useLayoutEffect(() => {
-    runtime.current?.update(props.configuration, props.camera);
+    runtime.current?.update(
+      props.configuration,
+      props.camera,
+      props.highlightElementId ?? null,
+    );
   });
   return (
     <div class="three-construction" data-renderer="three">
@@ -289,7 +397,18 @@ export default function ThreeConstruction(props: Props) {
             runtime.current?.pick(e, canvas.current!) ?? { keys: [] },
           )
         }
-        onPointerMove={props.onMove}
+        onPointerMove={(e) => {
+          props.onMove(e);
+          if (props.onHoverElement && canvas.current) {
+            const picked = runtime.current?.pick(e, canvas.current);
+            props.onHoverElement(
+              picked?.matchIds?.[0] ?? picked?.objectId ?? null,
+            );
+          }
+        }}
+        onPointerLeave={() => {
+          props.onHoverElement?.(null);
+        }}
         onPointerUp={props.onEnd}
         onPointerCancel={props.onEnd}
         onLostPointerCapture={props.onEnd}

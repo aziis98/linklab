@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+import functools
+import inspect
 
 import sympy as sp
 
@@ -75,8 +77,52 @@ class PointRef:
         return f"{self.object_id}:{self.name}"
 
 
+class SourceInfo:
+    source_span: tuple[int, int, int, int] | None = None
+
+
+def get_current_source_span() -> tuple[int, int, int, int] | None:
+    f = inspect.currentframe()
+    if not f:
+        return None
+    f = f.f_back
+    while f and f.f_code.co_filename != "<scene>":
+        f = f.f_back
+    if not f or f.f_code.co_filename != "<scene>":
+        return None
+    positions = list(f.f_code.co_positions())
+    idx = f.f_lasti // 2
+    if 0 <= idx < len(positions):
+        pos = positions[idx]
+        if pos[0] is not None and pos[2] is not None:
+            return (
+                pos[0],
+                pos[1] if pos[1] is not None else pos[0],
+                pos[2],
+                pos[3] if pos[3] is not None else pos[2],
+            )
+    return None
+
+
+def track_source(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        span = get_current_source_span()
+        res = func(*args, **kwargs)
+        if span is not None:
+            if isinstance(res, SourceInfo):
+                res.source_span = span
+            elif isinstance(res, (tuple, list)):
+                for item in res:
+                    if isinstance(item, SourceInfo):
+                        item.source_span = span
+        return res
+
+    return wrapper
+
+
 @dataclass
-class RigidObject:
+class RigidObject(SourceInfo):
     id: str
     points: dict[str, tuple[Scalar, ...]]
     fixed: bool = False
@@ -118,7 +164,7 @@ class RigidObject:
 
 
 @dataclass
-class Constraint:
+class Constraint(SourceInfo):
     kind: str
     a: str
     b: str | None = None
@@ -285,6 +331,7 @@ class Scene:
                     "kind": o.kind,
                     "fixed": o.fixed,
                     "points": {n: encode(p) for n, p in o.points.items()},
+                    **({"source_span": list(o.source_span)} if o.source_span else {}),
                 }
                 for o in self.objects
             ],
@@ -295,6 +342,7 @@ class Scene:
                     "a": c.a,
                     "b": c.b,
                     "value": encode(c.value),
+                    **({"source_span": list(c.source_span)} if c.source_span else {}),
                 }
                 for c in self.constraints
             ],
@@ -304,14 +352,15 @@ class Scene:
     def from_dict(cls, data):
         scene = cls(dimension=data["dimension"])
         for o in data["objects"]:
-            scene.objects.append(
-                RigidObject(
-                    o["id"],
-                    {n: tuple(exact(v) for v in p) for n, p in o["points"].items()},
-                    o["fixed"],
-                    o["kind"],
-                )
+            obj = RigidObject(
+                o["id"],
+                {n: tuple(exact(v) for v in p) for n, p in o["points"].items()},
+                o["fixed"],
+                o["kind"],
             )
+            if "source_span" in o and o["source_span"]:
+                obj.source_span = tuple(o["source_span"])
+            scene.objects.append(obj)
 
         def decode(value):
             if isinstance(value, list):
@@ -320,9 +369,10 @@ class Scene:
 
         for c in data["constraints"]:
             value = tuple(c["value"]) if c["kind"] == "parallel" else decode(c["value"])
-            scene.constraints.append(
-                Constraint(c["kind"], c["a"], c["b"], value, c["id"])
-            )
+            constraint = Constraint(c["kind"], c["a"], c["b"], value, c["id"])
+            if "source_span" in c and c["source_span"]:
+                constraint.source_span = tuple(c["source_span"])
+            scene.constraints.append(constraint)
         return scene
 
     def plane(self, target, origin=(0, 0, 0), normal=(0, 0, 1), id=None):
@@ -401,18 +451,18 @@ def build_scene(source: str, dimension: int | None = None) -> Scene:
     )
     env.update(
         scene=scene,
-        rod=scene.rod,
-        ring=scene.ring,
-        body=scene.body,
-        pin=scene.pin,
-        coincident=scene.coincident,
-        constraint_point_point=scene.coincident,
-        distance=scene.distance,
+        rod=track_source(scene.rod),
+        ring=track_source(scene.ring),
+        body=track_source(scene.body),
+        pin=track_source(scene.pin),
+        coincident=track_source(scene.coincident),
+        constraint_point_point=track_source(scene.coincident),
+        distance=track_source(scene.distance),
         fixed=scene.fixed,
-        point_on_plane=scene.point_on_plane,
-        plane=scene.plane,
+        point_on_plane=track_source(scene.point_on_plane),
+        plane=track_source(scene.plane),
         scene_dimension=scene_dimension,
-        parallel=scene.parallel,
+        parallel=track_source(scene.parallel),
     )
     exec(compile(source, "<scene>", "exec"), env)  # noqa: S102 -- scene scripts intentionally execute Python
     scene.resolve_dimension(dimension)

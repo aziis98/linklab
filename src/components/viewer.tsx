@@ -44,8 +44,20 @@ const previewColor = (severity = 0) =>
 export interface SceneData {
   revision: number;
   dimension: number;
-  objects: { id: string; kind: string; fixed: boolean; points: string[] }[];
-  constraints: { id: string; kind: string; a: string; b: string | null }[];
+  objects: {
+    id: string;
+    kind: string;
+    fixed: boolean;
+    points: string[];
+    source_span?: [number, number, number, number];
+  }[];
+  constraints: {
+    id: string;
+    kind: string;
+    a: string;
+    b: string | null;
+    source_span?: [number, number, number, number];
+  }[];
   configuration: Config;
   mobility: Mobility;
   motion: { status: string; reason: string; complete: boolean; cells: Cell[] };
@@ -78,9 +90,13 @@ function ringPath(
 export function Viewer({
   scene,
   error,
+  highlightElementId,
+  onHoverElement,
 }: {
   scene: SceneData | null;
   error?: string | null;
+  highlightElementId?: string | null;
+  onHoverElement?: (id: string | null) => void;
 }) {
   const [explorationEpoch, setExplorationEpoch] = useState(0);
   const [playbackInterrupt, setPlaybackInterrupt] = useState(0);
@@ -493,6 +509,7 @@ export function Viewer({
     kind: string;
     depth: number;
     layer: number;
+    matchIds: string[];
     node: VNode;
   }[] = [];
   for (const obj of scene?.objects ?? []) {
@@ -503,7 +520,8 @@ export function Viewer({
       position: V,
       layer: number,
       node: VNode,
-    ) => elements.push({ id, kind, depth: dot(position, ray), layer, node });
+      matchIds: string[] = [id, obj.id],
+    ) => elements.push({ id, kind, depth: dot(position, ray), layer, matchIds, node });
     if (obj.kind === "ring") {
       addElement(
         `${obj.id}:ring`,
@@ -541,6 +559,7 @@ export function Viewer({
             pointer-events="none"
           />
         </g>,
+        [obj.id, `${obj.id}:ring`],
       );
     } else {
       keys.forEach((a, i) =>
@@ -595,6 +614,7 @@ export function Viewer({
                 pointer-events="none"
               />
             </g>,
+            [obj.id, `${a}|${b}`],
           );
         }),
       );
@@ -606,6 +626,9 @@ export function Viewer({
     )) {
       if (!visible(configuration[key])) continue;
       const [x, y] = project(configuration[key]);
+    const relatedConstraints =
+      scene?.constraints.filter((c) => c.a === key || c.b === key) ?? [];
+    const relatedConstraintIds = relatedConstraints.map((c) => c.id);
       addElement(
         key,
         "joint",
@@ -613,6 +636,7 @@ export function Viewer({
         1,
         <g
           data-point={key}
+          data-constraints={relatedConstraintIds.join(" ")}
           onPointerDown={(e) => start(e, [key])}
           style={{ cursor: "grab" }}
         >
@@ -636,6 +660,7 @@ export function Viewer({
             pointer-events="none"
           />
         </g>,
+        [...relatedConstraintIds, obj.id, key],
       );
     }
     const label =
@@ -663,7 +688,14 @@ export function Viewer({
       </text>,
     );
   }
-  elements.sort((a, b) => a.depth - b.depth || a.layer - b.layer);
+  elements.sort(
+    (a, b) => {
+      const aActive = highlightElementId != null && a.matchIds.includes(highlightElementId);
+      const bActive = highlightElementId != null && b.matchIds.includes(highlightElementId);
+      if (aActive !== bActive) return aActive ? 1 : -1;
+      return a.depth - b.depth || a.layer - b.layer;
+    },
+  );
   const roadmapPaths = useMemo(
     () =>
       orbits &&
@@ -1116,16 +1148,26 @@ export function Viewer({
           )}
         {roadmapPaths}
         {!useThree &&
-          elements.map((item) => (
-            <g
-              key={item.id}
-              data-scene-element={item.id}
-              data-element-kind={item.kind}
-              data-depth={item.depth}
-            >
-              {item.node}
-            </g>
-          ))}
+          elements.map((item) => {
+            const isActive =
+              highlightElementId != null &&
+              item.matchIds.includes(highlightElementId);
+            return (
+              <g
+                key={item.id}
+                data-scene-element={item.id}
+                data-element-kind={item.kind}
+                data-depth={item.depth}
+                class={isActive ? "is-active" : undefined}
+                onMouseEnter={() => {
+                  onHoverElement?.(item.matchIds[0] ?? null);
+                }}
+                onMouseLeave={() => onHoverElement?.(null)}
+              >
+                {item.node}
+              </g>
+            );
+          })}
         {tangents &&
           analysis?.tangents.map((tangent, ti) =>
             Object.keys(configuration).map((key, i) => {
@@ -1167,6 +1209,8 @@ export function Viewer({
             scene={scene}
             configuration={configuration}
             camera={cameraSettings}
+            highlightElementId={highlightElementId}
+            onHoverElement={onHoverElement}
             onStart={(event, pick) => {
               const fixed = scene.objects.some(
                 (object) =>

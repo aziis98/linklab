@@ -8,6 +8,8 @@ import { Split } from "@/components/splitter";
 import { Editor } from "@/components/editor";
 import { FileSwitcher } from "@/components/file-switcher";
 import { Viewer, type SceneData } from "@/components/viewer";
+import { spanToOffsets, type SourceSpan } from "./source-spans";
+import { Text } from "@codemirror/state";
 import {
   createFile,
   deleteFile,
@@ -58,6 +60,7 @@ export function App() {
   const [dimension, setDimension] = useState(0);
   const [scene, setScene] = useState<SceneData | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+  const [activeElementId, setActiveElementId] = useState<string | null>(null);
 
   // first run: seed a starter file
   useEffect(() => {
@@ -130,6 +133,25 @@ export function App() {
   useEffect(() => {
     if (active) run();
   }, [activeId, dimension, solverMode]);
+
+  const sourceSpans = useMemo<SourceSpan[]>(() => {
+    if (!scene || !active?.body) return [];
+    const doc = Text.of(active.body.split("\n"));
+    const spans: SourceSpan[] = [];
+    for (const obj of scene.objects) {
+      if (obj.source_span) {
+        const offsets = spanToOffsets(doc, obj.source_span);
+        if (offsets) spans.push({ id: obj.id, ...offsets });
+      }
+    }
+    for (const c of scene.constraints) {
+      if (c.source_span) {
+        const offsets = spanToOffsets(doc, c.source_span);
+        if (offsets) spans.push({ id: c.id, ...offsets });
+      }
+    }
+    return spans;
+  }, [scene, active?.body]);
 
   const stateLabel: Record<State, string> = {
     idle: "idle",
@@ -207,6 +229,10 @@ export function App() {
               value={active?.body ?? ""}
               onChange={(body) => active && patch(active.id, body)}
               onRun={run}
+              spans={sourceSpans}
+              activeElementId={activeElementId}
+              onHoverElement={setActiveElementId}
+              onCaretElement={setActiveElementId}
             />
           </section>
         }
@@ -233,7 +259,12 @@ export function App() {
                 <IconArrowsMaximize class="icon" width="14" height="14" />
               </button>
             </div>
-            <Viewer scene={scene} error={runError} />
+            <Viewer
+              scene={scene}
+              error={runError}
+              highlightElementId={activeElementId}
+              onHoverElement={setActiveElementId}
+            />
           </section>
         }
       />

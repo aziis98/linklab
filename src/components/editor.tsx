@@ -33,11 +33,21 @@ import {
 } from "@codemirror/autocomplete";
 import { dslCompletionSource } from "../dsl-completions";
 import { editorHighlighting, editorTheme } from "../editor-theme";
+import {
+  setActiveHighlightEffect,
+  setSpansEffect,
+  sourceSpanExtension,
+  type SourceSpan,
+} from "../source-spans";
 
 interface Props {
   value: string;
   onChange: (value: string) => void;
   onRun?: () => void;
+  spans?: SourceSpan[];
+  activeElementId?: string | null;
+  onHoverElement?: (id: string | null) => void;
+  onCaretElement?: (id: string | null) => void;
 }
 const externalUpdate = Annotation.define<boolean>();
 
@@ -103,6 +113,10 @@ export function Editor(props: Props) {
             autocapitalize: "off",
             autocorrect: "off",
           }),
+          sourceSpanExtension({
+            onHoverElement: (id) => latest.current.onHoverElement?.(id),
+            onCaretElement: (id) => latest.current.onCaretElement?.(id),
+          }),
           EditorView.updateListener.of((update) => {
             if (
               update.docChanged &&
@@ -143,5 +157,22 @@ export function Editor(props: Props) {
         ],
       });
   }, [props.value]);
+
+  useLayoutEffect(() => {
+    const view = editor.current;
+    if (!view) return;
+    view.dispatch({
+      effects: setSpansEffect.of(props.spans ?? []),
+    });
+  }, [props.spans]);
+
+  useLayoutEffect(() => {
+    const view = editor.current;
+    if (!view) return;
+    view.dispatch({
+      effects: setActiveHighlightEffect.of(props.activeElementId ?? null),
+    });
+  }, [props.activeElementId]);
+
   return <div class="editor" ref={host} />;
 }

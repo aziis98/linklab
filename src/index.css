@@ -797,4 +797,37 @@
     color: var(--fg-muted);
     pointer-events: none;
   }
+
+  .cm-source-span {
+    background: color-mix(in srgb, var(--accent) 5%, transparent);
+    border-bottom: 1px dotted color-mix(in srgb, var(--accent) 50%, var(--fg-muted));
+    border-radius: 2px;
+  }
+  .cm-source-span-active {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border-bottom: 1.5px solid color-mix(in srgb, var(--accent) 90%, var(--fg));
+    border-radius: 2px;
+  }
+
+  /* SVG & Element highlighting */
+  [data-scene-element].is-active line:first-child,
+  [data-scene-element].is-active path:first-child {
+    stroke: color-mix(in srgb, var(--accent) 35%, currentColor) !important;
+  }
+  [data-scene-element].is-active line:last-child,
+  [data-scene-element].is-active path:last-child {
+    stroke: color-mix(in srgb, var(--accent) 30%, transparent) !important;
+  }
+  [data-scene-element].is-active circle[data-point],
+  [data-scene-element].is-active g[data-point] circle:first-child {
+    stroke: color-mix(in srgb, var(--accent) 70%, #000) !important;
+    fill: color-mix(in srgb, var(--accent) 8%, var(--cad-bg)) !important;
+  }
+  [data-scene-element].is-active g[data-point] circle:last-child {
+    fill: color-mix(in srgb, var(--accent) 75%, #000) !important;
+  }
+  [data-scene-element].is-active text {
+    fill: color-mix(in srgb, var(--accent) 75%, var(--fg)) !important;
+    font-weight: 600;
+  }
 }
