@@ -45,9 +45,9 @@ interface Props {
   onChange: (value: string) => void;
   onRun?: () => void;
   spans?: SourceSpan[];
-  activeElementId?: string | null;
-  onHoverElement?: (id: string | null) => void;
-  onCaretElement?: (id: string | null) => void;
+  activeElementId?: string | string[] | null;
+  onHoverElement?: (id: string | string[] | null) => void;
+  onCaretElement?: (id: string | string[] | null) => void;
 }
 const externalUpdate = Annotation.define<boolean>();
 

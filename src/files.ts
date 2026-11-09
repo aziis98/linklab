@@ -59,12 +59,26 @@ coincident(a.end, c.start)
   },
   {
     name: "spatial-rotor.py",
-    body: `# A tetrahedral rotor on a spherical joint: three rotational DOFs.
+    body: `from itertools import cycle, islice
+
+# A triangular pyramid rotor on a spherical joint: three rotational DOFs.
 scene_dimension(3)
 stand = rod(down * 0.6, origin, id="stand", fixed=True)
-rotor = body({}, id="rotor")
-pin(rotor.point("origin"), origin, id="spherical_joint")
-# Click Wander. The rotor turns freely around its fixed corner in all 3 axes.
+
+pts = range_circle(3, radius=1.0, center=up * 1.4, u=right, v=forward)
+edges = [rod(origin, p) for p in pts]
+next_edges = list(islice(cycle(edges), 1, 4))
+bases = [rod(p, q) for p, q in zip(pts, islice(cycle(pts), 1, 4))]
+
+for e1, e2 in zip(edges, next_edges):
+    coincident(e1.start, e2.start)
+
+for e1, b, e2 in zip(edges, bases, next_edges):
+    coincident(e1.end, b.start)
+    coincident(b.end, e2.end)
+
+pin(edges[0].start, origin, id="spherical_joint")
+# Click Wander. The rotor turns freely around its fixed apex in all 3 axes.
 `,
   },
   {
@@ -161,18 +175,46 @@ export const createFile = (name: string, body = ""): FileEntry => ({
   editedAt: Date.now(),
 });
 
+export const checkReset = () => {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  if (params.has("reset")) {
+    try {
+      localStorage.removeItem(FILES_KEY);
+      localStorage.removeItem(ACTIVE_KEY);
+      localStorage.removeItem("cad-detect-free-motions.files.v1");
+    } catch {
+      /* ignore */
+    }
+    params.delete("reset");
+    const search = params.toString();
+    const newUrl =
+      window.location.pathname + (search ? `?${search}` : "") + window.location.hash;
+    window.history.replaceState(null, "", newUrl);
+    return true;
+  }
+  return false;
+};
+
 export const ensureExamples = (files: FileEntry[]): FileEntry[] => {
-  const previousRotor = `# A tetrahedral rotor on a spherical joint: three rotational DOFs.
+  const previousRotors = [
+    `# A tetrahedral rotor on a spherical joint: three rotational DOFs.
 scene_dimension(3)
 base = ring(Vec(0, 0, -0.4), 1.1, id="base", fixed=True)
 stand = rod(Vec(0, 0, -0.4), origin, id="stand", fixed=True)
 rotor = body({}, id="rotor")
 pin(rotor.point("origin"), origin, id="spherical_joint")
-# Click Wander. The rotor turns freely around its fixed corner in all 3 axes.
-`;
+# Click Wander. The rotor turns freely around its fixed corner in all 3 axes.`,
+    `# A tetrahedral rotor on a spherical joint: three rotational DOFs.
+scene_dimension(3)
+stand = rod(down * 0.6, origin, id="stand", fixed=True)
+rotor = body({}, id="rotor")
+pin(rotor.point("origin"), origin, id="spherical_joint")
+# Click Wander. The rotor turns freely around its fixed corner in all 3 axes.`,
+  ];
   const updated = files.map((file) =>
     file.name === "spatial-rotor.py" &&
-    file.body.trim() === previousRotor.trim()
+    previousRotors.some((p) => p.trim() === file.body.trim())
       ? {
           ...file,
           body: BENCHMARK_EXAMPLES.find((e) => e.name === file.name)!.body,
@@ -193,13 +235,17 @@ pin(rotor.point("origin"), origin, id="spherical_joint")
 };
 
 export const loadFiles = () => {
+  checkReset();
   const v2 = read<FileEntry[] | null>(FILES_KEY, null);
   if (v2) return ensureExamples(v2);
   const v1 = read<FileEntry[] | null>("cad-detect-free-motions.files.v1", null);
   return ensureExamples(v1 || []);
 };
 export const saveFiles = (files: FileEntry[]) => write(FILES_KEY, files);
-export const loadActiveId = () => read<string | null>(ACTIVE_KEY, null);
+export const loadActiveId = () => {
+  checkReset();
+  return read<string | null>(ACTIVE_KEY, null);
+};
 export const saveActiveId = (id: string | null) => write(ACTIVE_KEY, id);
 
 /** Delete a file entry by id */

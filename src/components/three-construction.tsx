@@ -16,8 +16,8 @@ interface Props {
   scene: SceneData;
   configuration: Config;
   camera: CameraSettings;
-  highlightElementId?: string | null;
-  onHoverElement?: (id: string | null) => void;
+  highlightElementId?: string | string[] | null;
+  onHoverElement?: (id: string | string[] | null) => void;
   onStart: (event: PointerEvent, pick: ConstructionPick) => void;
   onMove: (event: PointerEvent) => void;
   onEnd: (event: PointerEvent) => void;
@@ -224,14 +224,23 @@ class ConstructionRenderer {
       .copy(this.materials.pin.color)
       .lerp(accent, 0.55);
   }
-  setHighlight(highlightId: string | null) {
+  setHighlight(highlightId: string | string[] | null) {
+    const activeIds = !highlightId
+      ? null
+      : Array.isArray(highlightId)
+        ? new Set(highlightId)
+        : new Set([highlightId]);
     for (const [mesh, meta] of this.meshMetadata) {
       const active =
-        highlightId != null && meta.matchIds.includes(highlightId);
+        activeIds != null && meta.matchIds.some((id) => activeIds.has(id));
       mesh.material = active ? meta.activeMaterial : meta.baseMaterial;
     }
   }
-  update(configuration: Config, settings: CameraSettings, highlightId: string | null = null) {
+  update(
+    configuration: Config,
+    settings: CameraSettings,
+    highlightId: string | string[] | null = null,
+  ) {
     if (settings.size.some((value, i) => value !== this.viewport[i])) {
       this.renderer.setSize(settings.size[0], settings.size[1], false);
       this.viewport = [...settings.size];
@@ -239,6 +248,11 @@ class ConstructionRenderer {
     this.camera = createThreeCamera(settings);
     const r = this.radius,
       y = new THREE.Vector3(0, 1, 0);
+    const activeIds = !highlightId
+      ? null
+      : Array.isArray(highlightId)
+        ? new Set(highlightId)
+        : new Set([highlightId]);
     for (const edge of this.edges) {
       const a = new THREE.Vector3(...configuration[edge.a]),
         b = new THREE.Vector3(...configuration[edge.b]);
@@ -256,7 +270,8 @@ class ConstructionRenderer {
       mesh.position.set(...configuration[key]);
       const meta = this.meshMetadata.get(mesh);
       const active =
-        highlightId != null && (meta?.matchIds.includes(highlightId) ?? false);
+        activeIds != null &&
+        (meta?.matchIds.some((id) => activeIds.has(id)) ?? false);
       mesh.scale.setScalar(r * (active ? 1.7 : 1.4));
     }
     for (const { id, mesh, radius } of this.rings) {
@@ -293,7 +308,7 @@ class ConstructionRenderer {
         x > settings.size[0] ||
         y > settings.size[1];
       element.style.transform = `translate(${x + 10}px,${y - 12}px)`;
-      if (highlightId === object.id) {
+      if (activeIds != null && activeIds.has(object.id)) {
         element.style.color = "var(--accent)";
         element.style.fontWeight = "bold";
       } else {

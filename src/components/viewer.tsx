@@ -95,9 +95,14 @@ export function Viewer({
 }: {
   scene: SceneData | null;
   error?: string | null;
-  highlightElementId?: string | null;
-  onHoverElement?: (id: string | null) => void;
+  highlightElementId?: string | string[] | null;
+  onHoverElement?: (id: string | string[] | null) => void;
 }) {
+  const highlightIds = useMemo(() => {
+    if (!highlightElementId) return new Set<string>();
+    if (Array.isArray(highlightElementId)) return new Set(highlightElementId);
+    return new Set([highlightElementId]);
+  }, [highlightElementId]);
   const [explorationEpoch, setExplorationEpoch] = useState(0);
   const [playbackInterrupt, setPlaybackInterrupt] = useState(0);
   const [wanderCommand, setWanderCommand] = useState(0);
@@ -690,8 +695,8 @@ export function Viewer({
   }
   elements.sort(
     (a, b) => {
-      const aActive = highlightElementId != null && a.matchIds.includes(highlightElementId);
-      const bActive = highlightElementId != null && b.matchIds.includes(highlightElementId);
+      const aActive = a.matchIds.some((id) => highlightIds.has(id));
+      const bActive = b.matchIds.some((id) => highlightIds.has(id));
       if (aActive !== bActive) return aActive ? 1 : -1;
       return a.depth - b.depth || a.layer - b.layer;
     },
@@ -1149,9 +1154,7 @@ export function Viewer({
         {roadmapPaths}
         {!useThree &&
           elements.map((item) => {
-            const isActive =
-              highlightElementId != null &&
-              item.matchIds.includes(highlightElementId);
+            const isActive = item.matchIds.some((id) => highlightIds.has(id));
             return (
               <g
                 key={item.id}

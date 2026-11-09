@@ -417,6 +417,26 @@ def sqrt(value):
     return sp.sqrt(exact(value))
 
 
+def range_circle(
+    count: int,
+    radius: Scalar = 1,
+    center: Vec | Sequence[Scalar] | None = None,
+    u: Vec | Sequence[Scalar] | None = None,
+    v: Vec | Sequence[Scalar] | None = None,
+) -> list[Vec]:
+    """Generates `count` points evenly spaced on a circle."""
+    c = origin if center is None else vec(center)
+    dir_u = right if u is None else vec(u)
+    dir_v = forward if v is None else vec(v)
+    r = exact(radius)
+    return [
+        c
+        + dir_u * (r * sp.cos(2 * sp.pi * i / count))
+        + dir_v * (r * sp.sin(2 * sp.pi * i / count))
+        for i in range(count)
+    ]
+
+
 def build_scene(source: str, dimension: int | None = None) -> Scene:
     scene = Scene(dimension=dimension)
 
@@ -437,8 +457,13 @@ def build_scene(source: str, dimension: int | None = None) -> Scene:
             "forward",
             "backward",
             "sqrt",
+            "range_circle",
         )
     }
+    from itertools import cycle, islice
+
+    env["cycle"] = cycle
+    env["islice"] = islice
     from .geometry import Circle, Line, Plane, Segment, Sphere, intersect
 
     env.update(

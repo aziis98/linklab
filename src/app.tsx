@@ -60,7 +60,7 @@ export function App() {
   const [dimension, setDimension] = useState(0);
   const [scene, setScene] = useState<SceneData | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
-  const [activeElementId, setActiveElementId] = useState<string | null>(null);
+  const [activeElementId, setActiveElementId] = useState<string | string[] | null>(null);
 
   // first run: seed a starter file
   useEffect(() => {
@@ -137,20 +137,34 @@ export function App() {
   const sourceSpans = useMemo<SourceSpan[]>(() => {
     if (!scene || !active?.body) return [];
     const doc = Text.of(active.body.split("\n"));
-    const spans: SourceSpan[] = [];
-    for (const obj of scene.objects) {
-      if (obj.source_span) {
-        const offsets = spanToOffsets(doc, obj.source_span);
-        if (offsets) spans.push({ id: obj.id, ...offsets });
+    const map = new Map<string, SourceSpan>();
+
+    const addSpan = (id: string, spanTuple: [number, number, number, number]) => {
+      const offsets = spanToOffsets(doc, spanTuple);
+      if (!offsets) return;
+      const key = `${offsets.from}:${offsets.to}`;
+      const existing = map.get(key);
+      if (existing) {
+        if (!existing.ids.includes(id)) {
+          existing.ids.push(id);
+        }
+      } else {
+        map.set(key, {
+          id,
+          ids: [id],
+          from: offsets.from,
+          to: offsets.to,
+        });
       }
+    };
+
+    for (const obj of scene.objects) {
+      if (obj.source_span) addSpan(obj.id, obj.source_span);
     }
     for (const c of scene.constraints) {
-      if (c.source_span) {
-        const offsets = spanToOffsets(doc, c.source_span);
-        if (offsets) spans.push({ id: c.id, ...offsets });
-      }
+      if (c.source_span) addSpan(c.id, c.source_span);
     }
-    return spans;
+    return Array.from(map.values());
   }, [scene, active?.body]);
 
   const stateLabel: Record<State, string> = {

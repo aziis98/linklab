@@ -3,6 +3,7 @@ import { EditorView, Decoration, type DecorationSet } from "@codemirror/view";
 
 export interface SourceSpan {
   id: string;
+  ids: string[];
   from: number;
   to: number;
 }
@@ -24,14 +25,14 @@ export function spanToOffsets(
 }
 
 export const setSpansEffect = StateEffect.define<SourceSpan[]>();
-export const setActiveHighlightEffect = StateEffect.define<string | null>();
+export const setActiveHighlightEffect = StateEffect.define<string | string[] | null>();
 
 const spanMark = Decoration.mark({ class: "cm-source-span" });
 const activeSpanMark = Decoration.mark({ class: "cm-source-span-active" });
 
 export interface SpanState {
   spans: SourceSpan[];
-  activeId: string | null;
+  activeIds: Set<string>;
   isStale: boolean;
   decorations: DecorationSet;
 }
@@ -40,13 +41,13 @@ export const sourceSpanField = StateField.define<SpanState>({
   create() {
     return {
       spans: [],
-      activeId: null,
+      activeIds: new Set(),
       isStale: false,
       decorations: Decoration.none,
     };
   },
   update(value, tr) {
-    let { spans, activeId, isStale } = value;
+    let { spans, activeIds, isStale } = value;
 
     if (tr.docChanged) {
       isStale = true;
@@ -58,7 +59,13 @@ export const sourceSpanField = StateField.define<SpanState>({
         spans = e.value;
         isStale = false;
       } else if (e.is(setActiveHighlightEffect)) {
-        activeId = e.value;
+        if (!e.value) {
+          activeIds = new Set();
+        } else if (Array.isArray(e.value)) {
+          activeIds = new Set(e.value);
+        } else {
+          activeIds = new Set([e.value]);
+        }
       }
     }
 
@@ -67,23 +74,26 @@ export const sourceSpanField = StateField.define<SpanState>({
       const sorted = [...spans].sort((a, b) => a.from - b.from || a.to - b.to);
       for (const span of sorted) {
         if (span.from < span.to && span.to <= tr.newDoc.length) {
+          const isActive = span.ids ? span.ids.some((id) => activeIds.has(id)) : activeIds.has(span.id);
           builder.add(
             span.from,
             span.to,
-            span.id === activeId ? activeSpanMark : spanMark,
+            isActive ? activeSpanMark : spanMark,
           );
         }
       }
     }
 
-    return { spans, activeId, isStale, decorations: builder.finish() };
+    return { spans, activeIds, isStale, decorations: builder.finish() };
   },
   provide: (f) => EditorView.decorations.from(f, (v) => v.decorations),
 });
 
 export interface SourceSpanExtensionOptions {
-  onHoverElement?: (id: string | null) => void;
-  onCaretElement?: (id: string | null) => void;
+  onHoverElements?: (ids: string[] | null) => void;
+  onHoverElement?: (id: string | string[] | null) => void;
+  onCaretElements?: (ids: string[] | null) => void;
+  onCaretElement?: (id: string | string[] | null) => void;
 }
 
 export function sourceSpanExtension(options: SourceSpanExtensionOptions = {}) {
@@ -93,32 +103,50 @@ export function sourceSpanExtension(options: SourceSpanExtensionOptions = {}) {
       if (update.selectionSet || update.docChanged) {
         const state = update.state.field(sourceSpanField);
         if (state.isStale || state.spans.length === 0) {
+          options.onCaretElements?.(null);
           options.onCaretElement?.(null);
           return;
         }
         const pos = update.state.selection.main.head;
-        const matched = state.spans.find((s) => pos >= s.from && pos <= s.to);
-        options.onCaretElement?.(matched ? matched.id : null);
+        const matched = state.spans.filter((s) => pos >= s.from && pos <= s.to);
+        if (matched.length === 0) {
+          options.onCaretElements?.(null);
+          options.onCaretElement?.(null);
+        } else {
+          const ids = Array.from(new Set(matched.flatMap((s) => s.ids ?? [s.id])));
+          options.onCaretElements?.(ids);
+          options.onCaretElement?.(ids.length === 1 ? ids[0] : ids);
+        }
       }
     }),
     EditorView.domEventHandlers({
       mousemove(event, view) {
-        if (!options.onHoverElement) return false;
+        if (!options.onHoverElements && !options.onHoverElement) return false;
         const state = view.state.field(sourceSpanField);
         if (state.isStale || state.spans.length === 0) {
-          options.onHoverElement(null);
+          options.onHoverElements?.(null);
+          options.onHoverElement?.(null);
           return false;
         }
         const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
         if (pos === null) {
-          options.onHoverElement(null);
+          options.onHoverElements?.(null);
+          options.onHoverElement?.(null);
           return false;
         }
-        const matched = state.spans.find((s) => pos >= s.from && pos <= s.to);
-        options.onHoverElement(matched ? matched.id : null);
+        const matched = state.spans.filter((s) => pos >= s.from && pos <= s.to);
+        if (matched.length === 0) {
+          options.onHoverElements?.(null);
+          options.onHoverElement?.(null);
+        } else {
+          const ids = Array.from(new Set(matched.flatMap((s) => s.ids ?? [s.id])));
+          options.onHoverElements?.(ids);
+          options.onHoverElement?.(ids.length === 1 ? ids[0] : ids);
+        }
         return false;
       },
       mouseleave(_event, _view) {
+        options.onHoverElements?.(null);
         options.onHoverElement?.(null);
         return false;
       },

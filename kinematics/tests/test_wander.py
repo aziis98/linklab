@@ -98,13 +98,15 @@ def test_spatial_rotor_has_three_rotational_dofs_and_a_fixed_pivot():
     ).read_text()
     live = Engine(build_scene(source))
     mobility = live.mobility()
-    assert {obj.id for obj in live.scene.objects} == {"stand", "rotor"}
+    rotor_edges = [obj for obj in live.scene.objects if obj.id != "stand"]
+    assert len(rotor_edges) == 6
     np.testing.assert_allclose(live.configuration()["stand:a"], [0, -0.6, 0])
     assert mobility["first_order"] == mobility["linear_compatible_dimension"] == 3
     wander = Wander(live, seed=4)
+    pivot_key = f"{rotor_edges[0].id}:a"
     for _ in range(240):
         pose = wander.step()["configuration"]
-        np.testing.assert_allclose(pose["rotor:origin"], [0, 0, 0], atol=1e-9)
+        np.testing.assert_allclose(pose[pivot_key], [0, 0, 0], atol=1e-9)
         assert live.error(wander.x) < 1e-9
     assert wander.chart.distance(live.current, wander.x) > 0.1
 
