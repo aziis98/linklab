@@ -85,43 +85,59 @@ class Wander:
 
     def step(self) -> WanderFrame:
         basis = self.basis
+        # Project previous motion direction onto the current tangent space.
         heading = basis @ (basis.T @ self.direction)
         if np.linalg.norm(heading) < 0.5:
             raise ValueError(
                 "Wander stopped where the local motion direction changes abruptly"
             )
         heading /= np.linalg.norm(heading)
-        # Smooth angular velocity: tangent transport plus correlated random forcing.
+
+        # Smooth angular velocity: tangent transport plus correlated random forcing (OU process).
         dt = 1 / 30
         noise = basis @ self.rng.normal(size=basis.shape[1])
         noise /= np.sqrt(max(1, basis.shape[1] - 1))
         phase = self.chart.phase(self.x)
+
+        # Predictor-corrector loop with adaptive step-halving.
         for _ in range(8):
+            # Ornstein-Uhlenbeck / AR(1) update for correlated directional steering.
             decay = np.exp(-dt / 0.8)
             steering = (
                 decay * self.steering + np.sqrt(1 - decay**2) * self.turning * noise
             )
+            # Confine steering to tangent space and enforce orthogonality to heading.
             steering = basis @ (basis.T @ steering)
             steering -= heading * np.dot(heading, steering)
+
+            # Predictor step along metric-weighted direction.
             direction = heading + dt * steering
             direction /= np.linalg.norm(direction)
             displacement = self.inverse_metric * direction * (self.speed * dt)
             predictor = self.x + displacement.reshape(self.x.shape)
+
             try:
+                # Correct candidate pose back onto the constraint manifold.
                 candidate = self.chart.correct(predictor, self.x, phase)
                 length = self.chart.distance(self.x, candidate)
+
+                # Reject if projection distance exceeds tolerance or step length drifts beyond 10%.
                 if (
                     self.chart.distance(candidate, predictor) > self.speed * dt * 0.15
                     or not 0.9 * self.speed * dt <= length <= 1.1 * self.speed * dt
                 ):
                     dt *= 0.5
                     continue
+
+                # Ensure local mobility (degrees of freedom) is preserved across step.
                 next_basis = self.tangent(candidate)
                 if next_basis.shape[1] != basis.shape[1]:
                     raise ValueError("Wander reached a change in local mobility")
             except ValueError:
                 dt *= 0.5
                 continue
+
+            # Accept step and advance state.
             self.x = candidate
             self.basis = next_basis
             self.direction = direction
