@@ -1,3 +1,4 @@
+import { getDragBackend, setDragBackend, type DragBackend } from "../solver/client";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { request } from "../pyodide";
 import { Dropdown } from "./dropdown";
@@ -47,6 +48,7 @@ export function ExplorationPanel({
   wanderCommand: number;
   onWanderState: (state: string) => void;
 }) {
+  const [dragBackend, updateDragBackend] = useState<DragBackend>(getDragBackend);
   const [graph, setGraph] = useState<Roadmap | null>(null),
     [running, setRunning] = useState(false),
     [error, setError] = useState("");
@@ -260,6 +262,10 @@ export function ExplorationPanel({
         onPose={onPose}
         onAdopt={onAdopt}
       />
+      <details>
+        <summary>Advanced motion settings</summary>
+        <Dropdown label="Drag engine" value={dragBackend} onChange={(value) => { setDragBackend(value as DragBackend); updateDragBackend(value as DragBackend); }} options={[{value:"javascript",label:"JavaScript"},{value:"python",label:"Python"}]} />
+      </details>
       <details class="manifold-section">
         <summary>Manifold exploration</summary>
       <div class="exploration-controls">

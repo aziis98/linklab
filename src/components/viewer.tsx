@@ -1,3 +1,4 @@
+import { subscribePreview } from "../solver/client";
 import type { VNode } from "preact";
 import { createPortal, lazy, Suspense } from "preact/compat";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -188,6 +189,18 @@ export function Viewer({
     setView(scene?.dimension === 3 ? "3D" : "XY");
     if (scene && scene.dimension !== 3) setPerspective(false);
   }, [scene]);
+  useEffect(() => {
+    const switchBackend = () => { drag.current = null; queued.current = null; interaction.current++; setGhost(null); void request({op:"sync_drag"}).catch(error=>setProblem(String(error))); };
+    window.addEventListener("linklab-drag-backend-change",switchBackend);
+    return ()=>window.removeEventListener("linklab-drag-backend-change",switchBackend);
+  }, []);
+  useEffect(() => subscribePreview(({preview,tag}) => {
+    const current=drag.current;
+    if (current && tag.generation === revision.current && tag.interaction === interaction.current) {
+      const grab=current.targets.reduce((sum,point,i)=>add(sum,mul(point,current.weights[i])),[0,0,0] as V);
+      setGhost({...preview,grab} as Preview);
+    }
+  }), []);
   const configuration = playback ?? live ?? scene?.configuration ?? {};
   const analysis = mobility ?? scene?.mobility;
   const initial =
@@ -243,6 +256,7 @@ export function Viewer({
           preview?: Preview;
         }>({
           op: job.kind,
+          preview_tag: {revision:job.sceneRevision,generation:job.generation,interaction:job.interaction},
           revision: job.sceneRevision,
           keys: job.keys,
           targets: job.targets,
@@ -276,6 +290,7 @@ export function Viewer({
       }
     }
     busy.current = false;
+    if (!drag.current) void request({op: "sync_drag"}).catch((error) => setProblem(String(error)));
   }
   async function start(
     e: PointerEvent,

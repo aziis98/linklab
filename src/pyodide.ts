@@ -1,10 +1,11 @@
+import { dispatch, stopDragWorker } from "./solver/client";
 let worker: Worker | null = null;
 let nextId = 0;
 const pending = new Map<
   number,
   { resolve: (value: unknown) => void; reject: (reason: Error) => void }
 >();
-export function request<T = unknown>(request: object): Promise<T> {
+function pythonRequest<T = unknown>(request: object): Promise<T> {
   if (!worker) {
     worker = new Worker(new URL("./pyodide.worker.ts", import.meta.url), {
       type: "module",
@@ -26,8 +27,17 @@ export function request<T = unknown>(request: object): Promise<T> {
   });
 }
 export function stop(reason = new Error("Python execution stopped")) {
+  stopDragWorker();
   worker?.terminate();
   worker = null;
   for (const entry of pending.values()) entry.reject(reason);
   pending.clear();
+}
+
+// Serialize handoffs as well as solves, so Python never observes a stale JS pose.
+let dispatchQueue: Promise<unknown> = Promise.resolve();
+export function request<T = unknown>(message: object): Promise<T> {
+  const result = dispatchQueue.then(() => dispatch<T>(message, pythonRequest));
+  dispatchQueue = result.catch(() => {});
+  return result;
 }

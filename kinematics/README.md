@@ -1,8 +1,9 @@
 # LinkLab — Python kinematics
 
 Standalone Python scene construction, rigid constraint solving, and motion-space
-exploration. The browser runs this same package inside a Pyodide worker; there is
-no JavaScript constraint solver.
+exploration. The browser runs scene compilation and motion exploration in a
+Pyodide worker, with ordinary drag and ghost fitting in a separate pure-JavaScript
+workers by default. The Python drag engine remains available as a reference.
 
 ```sh
 uv sync --extra render
@@ -164,13 +165,13 @@ spheres, and rigid rings as toruses, with a hardware depth buffer for constructi
 geometry. HTML labels follow the shared projection and remain overlay text.
 World grids, axes, ghost previews, orbits, and tangent guides reuse the SVG
 background layer to preserve their existing style. Raycasting the visible meshes
-feeds the same dragging, reassembly, and Python solver bridge as SVG picking.
+feeds the same dragging, reassembly, and solver bridge as SVG picking.
 Materials follow the light/dark theme. GPU resources are released on renderer or
 scene changes; an unavailable or lost WebGL context falls back to SVG with an error.
 Orbits distinguish isolated points and separate branches;
 changing disconnected configurations uses the certified component/chart selector
 or, in numerical mode, **Alt-drag an object and release** to reassemble near the ghost.
-A separate Python least-squares preview holds the clicked material point under
+A separate least-squares preview holds the clicked material point under
 the pointer and fits the entire construction. It can rotate and distort preview
 geometry while leaving the accepted feasible configuration untouched. Rod-length
 errors and joint separations blend continuously from blue toward red; fixed ground
@@ -426,3 +427,47 @@ does not interrupt playback. The speed slider ranges from 0.25× to 4×, with th
 new default 1× playing at twice the former default speed. Locked configurations
 show an inline explanation. Tour controls are currently hidden; Python tour
 APIs remain available.
+
+## JavaScript interactive drag engine
+
+The motion popover has **Advanced motion settings → Drag engine**, selecting
+JavaScript (default) or Python. DSL execution, assembly, certified topology,
+Alt-drag reassembly, Wander, and manifold exploration remain Python operations.
+
+Python's `numerical_model` operation exports version 1 of the resolved numerical
+model. JavaScript compiles Float64 coefficient arrays once, uses direct stable
+coordinate differences for residuals, and evaluates analytic Jacobians and
+second-order forms. Linear algebra uses a one-sided Jacobi SVD and symmetric
+Jacobi eigendecomposition, without WASM or extra numerical dependencies.
+Projection uses damped Gauss–Newton rather than SciPy's trust-region solver.
+Consequently, unobserved motions in multi-DOF systems may follow different nearby
+paths; accepted configurations must still meet the same 1e-9 feasibility bound.
+The reference tests compare classifications at identical poses, target error,
+and ghost grabs, with direct trajectory comparison for one-DOF mechanisms.
+
+The JS drag worker owns its solver state and scratch storage. A second worker
+fits ghost previews at most 20 times per second, retaining only the latest pending
+target. Accepted poses return immediately, independently of the visual fit.
+Late previews are rejected after release, scene replacement, or engine changes;
+the cursor grab marker follows the latest pointer target. Both Jacobian nullspaces
+come from one SVD, with orthogonal completion supplying the left nullspace. SVD scratch arrays and
+preview bases are reused; accepted and ghost coordinates use recycled transferred
+Float64 buffers. Rendering converts those buffers to the existing configuration
+records. Pending pointer events are coalesced by Viewer. A running solve finishes
+before the next command; cancellation is not preemptive inside a numerical stage.
+Python handoffs are serialized, synchronize the accepted pose before operations,
+and update the JS model after reset, selection, adoption, or reassembly. The
+last accepted pose is synchronized after pointer release. Changing engines ends
+the active gesture. Ghost fits never become accepted state.
+
+Verification from the repository root:
+
+```sh
+bun test scripts/js-drag.test.ts
+kinematics/.venv/bin/python scripts/check-js-drag-browser.py
+bun scripts/benchmark-js-drag.ts
+```
+
+The browser check expects the isolated development server at localhost:5183.
+The benchmark reports warmed JS kernel median/p95 and a native Python reference
+sample; native Python timings are not Pyodide timings or end-to-end browser latency.

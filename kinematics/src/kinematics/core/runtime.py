@@ -154,6 +154,9 @@ class Session:
 
     def dispatch(self, message):
         op = message["op"]
+        if op == "numerical_model":
+            from .numerical_model import export_model
+            return export_model(self)
         if op == "snapshot":
             return self.snapshot()
         if op == "run":
