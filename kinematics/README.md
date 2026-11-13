@@ -1,4 +1,4 @@
-# Kinematics
+# LinkLab — Python kinematics
 
 Standalone Python scene construction, rigid constraint solving, and motion-space
 exploration. The browser runs this same package inside a Pyodide worker; there is

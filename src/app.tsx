@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import IconPlayerPlay from "~icons/tabler/player-play";
 import IconRefresh from "~icons/tabler/refresh";
 import IconArrowsMaximize from "~icons/tabler/arrows-maximize";
-import IconRotate3d from "~icons/tabler/rotate-3d";
 import { Split } from "@/components/splitter";
 import { Editor } from "@/components/editor";
 import { FileSwitcher } from "@/components/file-switcher";
@@ -178,8 +177,7 @@ export function App() {
     <div class="app">
       <header class="bar bar--app">
         <span class="brand">
-          <IconRotate3d class="icon" width="14" height="14" />
-          CAD Detect Free Motions
+          LinkLab
         </span>
         <FileSwitcher
           files={files}
@@ -190,6 +188,8 @@ export function App() {
           onDelete={removeFile}
         />
         <span class="bar__spacer" />
+        <span class="dot" data-state={state === "ready" ? "ok" : state} />
+        <span>{stateLabel[state]}</span>
         <Dropdown
           label="Scene dimension"
           value={String(dimension)}
@@ -209,8 +209,6 @@ export function App() {
             { value: "topological", label: "Topological" },
           ]}
         />
-        <span class="dot" data-state={state === "ready" ? "ok" : state} />
-        <span>{stateLabel[state]}</span>
         <button
           type="button"
           class="btn btn--primary"
