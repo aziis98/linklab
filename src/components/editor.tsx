@@ -21,6 +21,7 @@ import {
   syntaxHighlighting,
 } from "@codemirror/language";
 import { python } from "@codemirror/lang-python";
+import { highlightSelectionMatches } from "@codemirror/search";
 import {
   acceptCompletion,
   autocompletion,
@@ -69,6 +70,7 @@ export function Editor(props: Props) {
           highlightActiveLine(),
           highlightActiveLineGutter(),
           drawSelection(),
+          highlightSelectionMatches({ maxMatches: 1000 }),
           bracketMatching(),
           closeBrackets(),
           EditorView.lineWrapping,

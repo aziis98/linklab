@@ -30,6 +30,10 @@ export const editorTheme = EditorView.theme({
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
     backgroundColor: "var(--focus)",
   },
+  ".cm-selectionMatch": {
+    backgroundColor: "color-mix(in srgb, var(--accent) 12%, transparent)",
+    borderRadius: "2px",
+  },
   ".cm-matchingBracket": {
     backgroundColor: "var(--bg-active)",
     outline: "1px solid var(--line-strong)",
