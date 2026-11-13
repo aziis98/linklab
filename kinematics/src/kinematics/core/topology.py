@@ -41,8 +41,11 @@ def circles(a, ra, b, rb):
 
 def exact_graph(engine):
     scene = engine.scene
-    if scene.dimension != 2 or any(o.kind != "rod" for o in scene.objects):
-        raise Unsupported("exact analysis currently supports planar rods")
+    if scene.dimension != 2 or any(
+        o.kind != "rod" or o.affine_points or set(o.points) != {"a", "b"}
+        for o in scene.objects
+    ):
+        raise Unsupported("exact analysis currently supports planar rods with endpoint attachments")
     parent = {k: k for k in engine.keys}
 
     def root(k):

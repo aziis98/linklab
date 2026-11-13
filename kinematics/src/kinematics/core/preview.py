@@ -27,13 +27,13 @@ def preview(engine, keys, targets, weights=None):
     for i, w in zip(ids, weights):
         A[:, i * d : (i + 1) * d] += w * np.eye(d)
     base = before.ravel().copy()
-    # The antipodal marker is a derived point, even when the preview distorts a ring.
-    affine = np.zeros((d * len(e.ring_bottoms), before.size))
-    for row, (bottom, center, top) in enumerate(e.ring_bottoms):
+    # Derived attachments stay affine even in the distorted drag preview.
+    affine = np.zeros((d * len(e.affine_points), before.size))
+    for row, (point, weights) in enumerate(e.affine_points):
         for axis in range(d):
-            affine[row * d + axis, bottom * d + axis] = 1
-            affine[row * d + axis, top * d + axis] = 1
-            affine[row * d + axis, center * d + axis] = -2
+            affine[row * d + axis, point * d + axis] = 1
+            for i, w in weights:
+                affine[row * d + axis, i * d : (i + 1) * d] -= w[axis]
     matrix = np.vstack((A, affine))[:, free]
     correction = (
         np.linalg.lstsq(matrix, np.r_[target - A @ base, -affine @ base], rcond=1e-12)[

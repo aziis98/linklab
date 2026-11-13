@@ -2,6 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { request } from "../pyodide";
 import { Dropdown } from "./dropdown";
 
+// The previous default was 3; the displayed 1× now plays at twice that rate.
+const BASE_PLAYBACK_RATE = 6;
+
 type Config = Record<string, [number, number, number]>;
 type Frame = { configuration: Config; time: number };
 type Batch = { frames: Frame[]; status: string; reason: string };
@@ -140,8 +143,14 @@ export function WanderControls({
     } catch (error) {
       if (gen !== generation.current) return;
       cancel();
-      setState("stopped");
-      setMessage(String(error));
+      const text = String(error);
+      const locked = text.includes("No continuous motion is available");
+      const singular = text.includes("unresolved singular configuration");
+      setState(locked || singular ? "unavailable" : "error");
+      setMessage(locked
+        ? "This configuration has no continuous motion. Try another scene or reassemble the construction before wandering."
+        : singular ? "Motion is unresolved at this singular configuration. Try reassembling to a different pose."
+        : "Wander could not start. Run the scene again and retry.");
       onActive(false);
     }
   }
@@ -155,7 +164,7 @@ export function WanderControls({
       const tail = queue.at(-1)?.time ?? clock.current;
       clock.current = Math.min(
         tail,
-        clock.current + Math.min((now - previous) / 1000, 0.1) * speed,
+        clock.current + Math.min((now - previous) / 1000, 0.1) * speed * BASE_PLAYBACK_RATE,
       );
       previous = now;
       while (queue.length > 1 && queue[1].time <= clock.current) queue.shift();
@@ -180,52 +189,11 @@ export function WanderControls({
   return (
     <div class="wander-controls">
       <div class="exploration-controls">
-        <button
-          class="btn"
-          disabled={
-            disabled ||
-            state === "starting" ||
-            state === "playing" ||
-            state === "paused"
-          }
-          onClick={start}
-        >
-          {state === "starting" ? "Starting wander…" : "Start wander"}
-        </button>
-        {(state === "playing" || state === "paused") && (
-          <button
-            class="btn"
-            onClick={() => {
-              playing.current = state !== "playing";
-              setState(state === "playing" ? "paused" : "playing");
-            }}
-          >
-            {state === "playing" ? "Pause wander" : "Resume wander"}
-          </button>
-        )}
-        {(state === "playing" ||
-          state === "paused" ||
-          state === "starting") && (
-          <button
-            class="btn"
-            onClick={() => {
-              cancel();
-              setState("stopped");
-              onActive(false);
-            }}
-          >
-            Stop wander
-          </button>
-        )}
-        <Dropdown
-          label="Wander speed"
-          value={String(speed)}
-          onChange={(v) => onSpeed(Number(v))}
-          options={[0.75, 1.5, 3, 6].map((value) => ({
-            value: String(value),
-            label: `${value}×`,
-          }))}
-        />
+        <label class="wander-speed">
+          <span>Speed <output>{speed.toFixed(2).replace(/\.?0+$/, "")}×</output></span>
+          <input aria-label="Wander speed" type="range" style={{ "--range-progress": `${((speed - 0.25) / 3.75) * 100}%` }} min="0.25" max="4" step="0.25" value={speed} onInput={(e) => onSpeed(Number(e.currentTarget.value))} />
+          <span class="wander-speed__scale"><span>0.25×</span><span>4×</span></span>
+        </label>
         <Dropdown
           label="Wander steering"
           value={turning}
@@ -267,15 +235,15 @@ export function WanderControls({
           </button>
         )}
       </div>
-      {state !== "idle" && (
+      {!["idle", "unavailable", "error"].includes(state) && (
         <small role="status">
           Wander · {state === "playing" && buffering ? "buffering" : state} ·{" "}
           {elapsed.toFixed(1)} s
         </small>
       )}
-      {message && <div role="status">{message}</div>}
+      {message && <div class={`wander-notice ${state === "unavailable" ? "wander-notice--unavailable" : ""}`} role="status"><strong>{state === "unavailable" ? "Wander unavailable" : "Wander paused"}</strong><p>{message}</p></div>}
       <small>
-        Smooth random steering from the displayed pose. No exploration required.
+        Follow continuous motion from the current pose.
       </small>
     </div>
   );

@@ -61,7 +61,7 @@ class Session:
                 if o.kind == "ring"
                 else np.mean(
                     [
-                        [cfg[f"{o.id}:{n}"] for n in o.points]
+                        [cfg[f"{o.id}:{n}"] for n in o.metric_names]
                         for cfg in cell["configurations"]
                     ],
                     axis=1,
@@ -90,7 +90,8 @@ class Session:
                     "id": o.id,
                     "kind": o.kind,
                     "fixed": o.fixed,
-                    "points": list(o.points),
+                    "points": o.render_names,
+                    "point_labels": o.point_labels,
                     **({"source_span": list(o.source_span)} if o.source_span else {}),
                 }
                 for o in e.scene.objects

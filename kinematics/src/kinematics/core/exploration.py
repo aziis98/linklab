@@ -83,9 +83,9 @@ class Exploration:
         self.weights = np.zeros(len(self.root))
         moving = [o for o in live.scene.objects if not o.fixed]
         for o in moving:
-            for n in o.points:
+            for n in o.metric_names:
                 self.weights[live.index[f"{o.id}:{n}"]] = 1 / max(
-                    1, len(moving) * len(o.points)
+                    1, len(moving) * len(o.metric_names)
                 )
         self.metric = (
             np.repeat(np.sqrt(self.weights), self.engine.d) / self.engine.scale

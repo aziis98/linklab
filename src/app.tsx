@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import IconPlayerPlay from "~icons/tabler/player-play";
-import IconPlayerStop from "~icons/tabler/player-stop";
 import IconRefresh from "~icons/tabler/refresh";
 import IconArrowsMaximize from "~icons/tabler/arrows-maximize";
 import IconRotate3d from "~icons/tabler/rotate-3d";
@@ -22,7 +21,7 @@ import {
   type FileEntry,
 } from "@/files";
 import { Dropdown } from "./components/dropdown";
-import { request, stop } from "@/pyodide";
+import { request } from "@/pyodide";
 
 type State = "idle" | "loading" | "ready" | "error";
 
@@ -58,6 +57,7 @@ export function App() {
     "numerical",
   );
   const [dimension, setDimension] = useState(0);
+  const [motionToolbar, setMotionToolbar] = useState<HTMLDivElement | null>(null);
   const [scene, setScene] = useState<SceneData | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [activeElementId, setActiveElementId] = useState<string | string[] | null>(null);
@@ -220,19 +220,7 @@ export function App() {
           <IconPlayerPlay class="icon" width="12" height="12" />
           Run
         </button>
-        <button
-          type="button"
-          class="btn btn--danger"
-          onClick={() => {
-            stop();
-            setState("ready");
-            setScene(null);
-          }}
-          disabled={state !== "loading"}
-        >
-          <IconPlayerStop class="icon" width="12" height="12" />
-          Stop
-        </button>
+        <div class="motion-toolbar" ref={setMotionToolbar} />
       </header>
 
       <Split
@@ -274,6 +262,7 @@ export function App() {
               </button>
             </div>
             <Viewer
+              motionToolbar={motionToolbar}
               scene={scene}
               error={runError}
               highlightElementId={activeElementId}

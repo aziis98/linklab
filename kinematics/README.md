@@ -376,3 +376,53 @@ The recorder uses installed Chromium plus FFmpeg and writes MP4s under
 motion; the recorder does not invent a tour for them. The local chart corrector
 fixes tangent coordinates during normal correction, preventing residual minimizers
 from drifting along the manifold during exploration and frame preparation.
+
+### Local attachment points
+
+`Rod` and `Ring` inherit the common `RigidBody` implementation. Local coordinates
+are actual distances: rods are centered at their midpoint along local X; rings
+are centered at their center in local XY. `relative` and `rel` are aliases:
+
+```python
+arm = rod(left * 2, right * 2)
+pin(arm.rel(0))                 # midpoint
+mount = arm.relative(Vec(0, 1)) # planar point perpendicular to the rod
+wheel = ring(origin, 2)
+coincident(wheel.rel(0, 2), arm.start)  # wheel.top
+```
+
+Named getters delegate to the same point API. Relative points add exact linear
+relationships to the material frame, without independent motion. Exploration
+metrics and visible geometry do not depend on the number of attachment points.
+The serialized scene remains plain body/constraint data, including attachment
+coordinates and their affine weights; old named-point scenes still load.
+
+3D rods default to `FrameKind.AXIAL_X` (five DOFs), so only local X points are
+supported. For off-axis attachments use
+`rod(left, right, frame="full", normal=forward)` (six DOFs). `normal` specifies
+the initial local XY plane normal; when omitted, a deterministic perpendicular
+frame is chosen. 2D rods support off-axis XY attachments without another DOF.
+Subclasses declare `frame_kind` and implement `frame()`; the engine evaluates
+the resulting generic affine records. Generic `body(..., center=Vec(...))`
+accepts an explicitly chosen frame center, defaulting to the world origin.
+Uniform rods and rings use their centers of mass; no mass model is inferred for
+arbitrary bodies. Point references retain initial world coordinates for DSL
+arithmetic; their keys track the moving material points in solver configurations.
+
+The `hopf-link-four-cables-3d.py` preset reproduces perpendicular linked unit
+rings with four attachment pairs. Ring A is fixed in XY; ring B uses
+`ring(right, 1, normal=down)` to put its local XY frame in world XZ. The normal
+is normalized, with local X chosen by projecting world X into its plane (world
+Y when parallel). Connections currently use fixed-length rods, rather than
+unilateral cable inequalities or collision constraints.
+
+Relative attachment points accept `label="a1"`, which persists with the scene
+and appears beside the moving point in both renderers. The Hopf preset declares
+all eight labeled points, four rods, and eight joints explicitly.
+
+Wander is available beside Run in the main toolbar. Its split-button arrow
+opens motion settings and the optional manifold explorer; closing this popover
+does not interrupt playback. The speed slider ranges from 0.25× to 4×, with the
+new default 1× playing at twice the former default speed. Locked configurations
+show an inline explanation. Tour controls are currently hidden; Python tour
+APIs remain available.

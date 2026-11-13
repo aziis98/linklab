@@ -37,7 +37,9 @@ def test_bottom_is_an_antipodal_marker_without_extra_degrees_of_freedom(
     )
     assert mobility["second_order"] == "compatible"
     restored = Engine(Scene.from_dict(scene.to_dict()))
-    assert restored.ring_bottoms == engine.ring_bottoms
+    assert np.allclose(
+        restored.jac(restored.initial.ravel()), engine.jac(engine.initial.ravel())
+    )
     assert restored.configuration() == engine.configuration()
 
 

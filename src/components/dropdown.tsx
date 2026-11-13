@@ -1,5 +1,6 @@
+import IconChevronDown from "~icons/tabler/chevron-down";
 import { createPortal } from "preact/compat";
-import { useEffect, useId, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useId, useRef, useState } from "preact/hooks";
 
 interface Option {
   value: string;
@@ -104,7 +105,7 @@ export function Dropdown({ label, value, options, onChange, disabled }: Props) {
       next = (next + direction + options.length) % options.length;
     setActive(next);
   }
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     menu.current?.focus();
     function outside(e: PointerEvent) {
@@ -152,7 +153,7 @@ export function Dropdown({ label, value, options, onChange, disabled }: Props) {
       >
         <span>{chosen?.label ?? label}</span>
         <span aria-hidden="true" class="dropdown__chevron">
-          ⌄
+          <IconChevronDown width="12" height="12" />
         </span>
       </button>
       {open &&

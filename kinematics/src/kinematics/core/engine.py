@@ -53,7 +53,21 @@ class Engine:
         if not np.all(np.isfinite(self.initial)):
             raise ValueError("coordinates must be finite")
         self.scale = max(
-            float(np.ptp(self.initial, axis=0).max()) if len(self.initial) else 1, 1e-6
+            float(
+                np.ptp(
+                    np.array(
+                        [
+                            self.initial[self.index[f"{o.id}:{n}"]]
+                            for o in scene.objects
+                            for n in o.metric_names
+                        ]
+                    ),
+                    axis=0,
+                ).max()
+            )
+            if len(self.initial)
+            else 1,
+            1e-6,
         )
         self.pins = {}
         self.equal = []
@@ -61,16 +75,25 @@ class Engine:
         self.planes = []
         self.parallels = []
         self.fixed_equations = []
-        self.ring_bottoms: list[tuple[int, int, int]] = []
+        self.affine_points: list[tuple[int, list[tuple[int, FloatArray]]]] = []
         for o in scene.objects:
             ids = [self.index[f"{o.id}:{n}"] for n in o.points]
-            rigid_ids = ids
-            if o.kind == "ring" and "bottom" in o.points:
-                bottom, center, top = (
-                    self.index[f"{o.id}:{n}"] for n in ("bottom", "origin", "y")
+            rigid_ids = [self.index[f"{o.id}:{n}"] for n in o.material_names]
+            for name, weights in o.affine_points.items():
+                self.affine_points.append(
+                    (
+                        self.index[f"{o.id}:{name}"],
+                        [
+                            (
+                                self.index[f"{o.id}:{n}"],
+                                np.array(w, float)[: self.d, : self.d]
+                                if isinstance(w, tuple)
+                                else float(w) * np.eye(self.d),
+                            )
+                            for n, w in weights.items()
+                        ],
+                    )
                 )
-                self.ring_bottoms.append((bottom, center, top))
-                rigid_ids = [i for i in ids if i != bottom]
             for i, j in combinations(rigid_ids, 2):
                 self.lengths.append(
                     (i, j, float(np.sum((self.initial[i] - self.initial[j]) ** 2)))
@@ -117,8 +140,8 @@ class Engine:
             (np.dot(x[i] - x[j], x[i] - x[j]) - l) / (2 * s * s)
             for i, j, l in self.lengths
         ]
-        for bottom, center, top in self.ring_bottoms:
-            rows.extend((x[bottom] + x[top] - 2 * x[center]) / s)
+        for point, weights in self.affine_points:
+            rows.extend((x[point] - sum(w @ x[i] for i, w in weights)) / s)
         for i, j in self.equal:
             rows.extend((x[i] - x[j]) / s)
         for i, p in list(self.pins.items()) + self.fixed_equations:
@@ -146,11 +169,12 @@ class Engine:
             r[i] = (x[i] - x[j]) / s**2
             r[j] = -r[i]
             rows.append(r.ravel())
-        for bottom, center, top in self.ring_bottoms:
+        for point, weights in self.affine_points:
             for axis in range(self.d):
                 r = blank()
-                r[bottom, axis] = r[top, axis] = 1 / s
-                r[center, axis] = -2 / s
+                r[point, axis] = 1 / s
+                for i, w in weights:
+                    r[i] -= w[axis] / s
                 rows.append(r.ravel())
         for i, j in self.equal:
             for a in range(self.d):
@@ -376,10 +400,10 @@ class Engine:
         for i, j, _ in self.lengths:
             adjacency[i].add(j)
             adjacency[j].add(i)
-        for bottom, center, top in self.ring_bottoms:
-            for other in (center, top):
-                adjacency[bottom].add(other)
-                adjacency[other].add(bottom)
+        for point, affine_weights in self.affine_points:
+            for other, _ in affine_weights:
+                adjacency[point].add(other)
+                adjacency[other].add(point)
         for i, j in self.equal:
             adjacency[i].add(j)
             adjacency[j].add(i)

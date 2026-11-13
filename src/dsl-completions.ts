@@ -377,7 +377,6 @@ function members(object: SceneObject): Completion[] {
     object.kind === "rod"
       ? [property("start", "rod start point"), property("end", "rod end point")]
       : [
-          property("center", "material origin"),
           ...(object.kind === "ring"
             ? [
                 property("top", "ring top point"),
@@ -386,6 +385,11 @@ function members(object: SceneObject): Completion[] {
             : []),
         ];
   list.push(
+    property("origin", "body frame center"),
+    property("center", "body frame center"),
+    ...["relative", "rel"].map((name) => snippetCompletion(`${name}(Vec(\${1:0}, \${2:0}, \${3:0}))\${0}`, {
+      label: name, type: "method", detail: "point in body-local coordinates",
+    })),
     snippetCompletion('axis("${1:x}")${0}', {
       label: "axis",
       type: "method",
@@ -488,6 +492,14 @@ export function dslCompletionSource(
             type: "property",
             detail: "ground this object",
           }),
+          ...(constructor === "rod" ? [
+            snippetCompletion('frame="${1:full}"${0}', { label: "frame", type: "property", detail: "axial (default) or full material frame" }),
+            snippetCompletion('normal=${1:forward}${0}', { label: "normal", type: "property", detail: "initial local XY plane normal" }),
+          ] : constructor === "ring" ? [
+            snippetCompletion('normal=${1:forward}${0}', { label: "normal", type: "property", detail: "initial ring plane normal" }),
+          ] : constructor === "body" ? [
+            snippetCompletion('center=${1:origin}${0}', { label: "center", type: "property", detail: "declared body frame center" }),
+          ] : []),
           { label: "True", type: "constant" },
           { label: "False", type: "constant" },
         ],

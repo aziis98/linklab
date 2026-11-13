@@ -1,8 +1,9 @@
 import type { VNode } from "preact";
-import { lazy, Suspense } from "preact/compat";
+import { createPortal, lazy, Suspense } from "preact/compat";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { ConstructionGrid } from "./construction-grid";
 import { ExplorationPanel, type Roadmap } from "./exploration-panel";
+import { MotionPopover } from "./motion-popover";
 import { Dropdown } from "./dropdown";
 import { request } from "../pyodide";
 import { createCamera, type CameraSettings } from "../camera";
@@ -49,6 +50,7 @@ export interface SceneData {
     kind: string;
     fixed: boolean;
     points: string[];
+    point_labels?: Record<string, string>;
     source_span?: [number, number, number, number];
   }[];
   constraints: {
@@ -88,11 +90,13 @@ function ringPath(
   return projectPath(ringPoints(cfg, id), true);
 }
 export function Viewer({
+  motionToolbar,
   scene,
   error,
   highlightElementId,
   onHoverElement,
 }: {
+  motionToolbar?: HTMLElement | null;
   scene: SceneData | null;
   error?: string | null;
   highlightElementId?: string | string[] | null;
@@ -897,21 +901,6 @@ export function Viewer({
         }}
       >
         <button
-          class={`btn ${wanderState === "playing" ? "btn--active" : ""}`}
-          aria-label="Toggle wander"
-          aria-pressed={wanderState === "playing"}
-          disabled={
-            !scene || wanderState === "starting" || wanderState === "busy"
-          }
-          onClick={() => setWanderCommand((n) => n + 1)}
-        >
-          {wanderState === "playing"
-            ? "Pause wander"
-            : wanderState === "paused"
-              ? "Resume wander"
-              : "Wander"}
-        </button>
-        <button
           class={`btn ${orbits ? "btn--active" : ""}`}
           aria-pressed={orbits}
           onClick={() => setOrbits(!orbits)}
@@ -960,7 +949,8 @@ export function Viewer({
           {error || problem}
         </pre>
       )}
-      {scene && (
+      {scene && motionToolbar && createPortal(
+        <MotionPopover state={wanderState} disabled={!scene} onToggle={() => setWanderCommand((n) => n + 1)}>
         <ExplorationPanel
           key={`${scene.revision}-${explorationEpoch}`}
           revision={scene.revision}
@@ -975,7 +965,7 @@ export function Viewer({
             setPlayback(null);
           }}
         />
-      )}
+        </MotionPopover>, motionToolbar)}
       <svg
         data-cad-camera={camera.join(",")}
         data-projection={
@@ -1246,6 +1236,14 @@ export function Viewer({
           />
         </Suspense>
       )}
+      <svg class="cad-point-labels" width="100%" height="100%" aria-label="Point labels">
+        {scene?.objects.flatMap((object) => Object.entries(object.point_labels ?? {}).map(([name, label]) => {
+          const point = configuration[`${object.id}:${name}`];
+          if (!point || !visible(point)) return null;
+          const [x, y] = project(point);
+          return <text key={`${object.id}:${name}:label`} data-point-label={label} x={x + 10} y={y - 10} class="cad-point-label" pointer-events="none">{label}</text>;
+        }))}
+      </svg>
     </div>
   );
 }

@@ -66,18 +66,11 @@ export function ExplorationPanel({
     } | null>(null);
   const [playing, setPlaying] = useState(false),
     [frame, setFrame] = useState(0),
-    [speed, setSpeed] = useState(3),
+    [speed, setSpeed] = useState(1),
     [preparing, setPreparing] = useState(false);
   const [prepared, setPrepared] = useState({ done: 0, total: 1 });
   const [wanderActive, setWanderActive] = useState(false);
   const [wanderReset, setWanderReset] = useState(0);
-  const panel = useRef<HTMLDetailsElement>(null);
-  const lastWanderCommand = useRef(wanderCommand);
-  useEffect(() => {
-    if (wanderCommand !== lastWanderCommand.current && panel.current)
-      panel.current.open = true;
-    lastWanderCommand.current = wanderCommand;
-  }, [wanderCommand]);
   useLayoutEffect(() => {
     setPlaying(false);
     setTour(null);
@@ -247,8 +240,28 @@ export function ExplorationPanel({
     return () => cancelAnimationFrame(id);
   }, [playing, tour, speed]);
   return (
-    <details class="exploration-panel" ref={panel}>
-      <summary>Exploration</summary>
+    <div class="exploration-panel">
+      <WanderControls
+        command={wanderCommand}
+        onState={onWanderState}
+        revision={revision}
+        interrupt={interrupt + wanderReset}
+        pose={pose}
+        seed={seed}
+        disabled={running || preparing}
+        speed={speed}
+        onSpeed={setSpeed}
+        onBegin={() => {
+          setPlaying(false);
+          setTour(null);
+          setError("");
+        }}
+        onActive={setWanderActive}
+        onPose={onPose}
+        onAdopt={onAdopt}
+      />
+      <details class="manifold-section">
+        <summary>Manifold exploration</summary>
       <div class="exploration-controls">
         <Dropdown
           label="Exploration quality"
@@ -408,6 +421,7 @@ export function ExplorationPanel({
           1e-9.
         </small>
       </details>
+      <div hidden>
       <div class="exploration-controls">
         <label>
           Targets{" "}
@@ -488,25 +502,7 @@ export function ExplorationPanel({
           </button>
         </>
       )}
-      <WanderControls
-        command={wanderCommand}
-        onState={onWanderState}
-        revision={revision}
-        interrupt={interrupt + wanderReset}
-        pose={pose}
-        seed={seed}
-        disabled={running || preparing}
-        speed={speed}
-        onSpeed={setSpeed}
-        onBegin={() => {
-          setPlaying(false);
-          setTour(null);
-          setError("");
-        }}
-        onActive={setWanderActive}
-        onPose={onPose}
-        onAdopt={onAdopt}
-      />
+      </div>
       {graph && (
         <>
           <button class="btn" onClick={() => setShowGraph(!showGraph)}>
@@ -520,6 +516,7 @@ export function ExplorationPanel({
           {error}
         </div>
       )}
-    </details>
+      </details>
+    </div>
   );
 }

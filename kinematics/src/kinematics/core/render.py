@@ -15,7 +15,7 @@ def render_png(scene, configuration, path, camera=(35, 25), overlays=()):
     ax = fig.add_subplot(projection="3d") if scene.dimension == 3 else fig.add_subplot()
     ax.set_facecolor("#090d16")
     for obj in scene.objects:
-        pts = [np.array(configuration[f"{obj.id}:{name}"]) for name in obj.points]
+        pts = [np.array(configuration[f"{obj.id}:{name}"]) for name in obj.render_names]
         if obj.kind == "ring":
             center = np.array(configuration[f"{obj.id}:origin"])
             right = np.array(configuration[f"{obj.id}:x"]) - center

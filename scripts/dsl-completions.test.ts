@@ -18,6 +18,8 @@ describe("Scene DSL completion", () => {
   test("rod and ring members differ, and names come from declarations", () => {
     const rod = complete("beam = rod(left, up)\nbeam.")!;
     expect(rod.options.map((o) => o.label)).toContain("start");
+    for (const name of ["relative", "rel", "origin", "center"])
+      expect(rod.options.map((o) => o.label)).toContain(name);
     expect(rod.options.map((o) => o.label)).not.toContain("top");
     expect(rod.from).toBe("beam = rod(left, up)\nbeam.".length);
     const ring = complete("wheel = ring(origin, 2)\nwheel.")!;

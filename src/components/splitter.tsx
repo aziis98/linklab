@@ -4,7 +4,7 @@ import type { ComponentChildren } from 'preact'
 const KEY = 'cad-detect-free-motions.split.v1'
 const MIN = 15
 const MAX = 85
-const DEFAULT = 100 / 3
+const DEFAULT = 40
 
 interface Props {
   initial?: number
