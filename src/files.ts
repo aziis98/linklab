@@ -26,32 +26,38 @@ const write = (key: string, value: unknown) => {
   }
 };
 
-const EXAMPLE_MODULES = import.meta.glob<string>("./examples/*.py", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-});
+const EXAMPLE_MODULES = import.meta.glob<string>(
+  "../kinematics/src/kinematics/examples/*.py",
+  {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  },
+);
 
-const EXAMPLE_ORDER = [
-  "hopf-link-four-cables-3d.py",
-  "concentric-rings-three-braces-3d.py",
-  "concentric-rings-3d.py",
-  "spatial-linked-pendulum.py",
-  "spatial-rotor.py",
-  "planar-4-bar-v2.py",
-  "collinear-2-rod.py",
-  "mixed-dimensions-4-rod-v2.py",
-  "disjoint-modes-triangle.py",
-  "spatial-arm.py",
-  "concentric-rings.py",
-] as const;
+const EXAMPLE_SPECS: ReadonlyArray<readonly [name: string, file: string]> = [
+  ["hopf-link-four-cables-3d.py", "hopf_link.py"],
+  ["concentric-rings-three-braces-3d.py", "concentric_rings_three_braces.py"],
+  ["concentric-rings-3d.py", "concentric_rings_3d.py"],
+  ["spatial-linked-pendulum.py", "spatial_linked_pendulum.py"],
+  ["spatial-rotor.py", "spatial_rotor.py"],
+  ["planar-4-bar-v2.py", "four_bar.py"],
+  ["collinear-2-rod.py", "collinear.py"],
+  ["mixed-dimensions-4-rod-v2.py", "mixed.py"],
+  ["disjoint-modes-triangle.py", "triangle.py"],
+  ["spatial-arm.py", "spatial.py"],
+  ["concentric-rings.py", "concentric_rings.py"],
+];
 
-export const BENCHMARK_EXAMPLES = EXAMPLE_ORDER.map((name) => {
-  const body = EXAMPLE_MODULES[`./examples/${name}`];
-  if (body === undefined) {
-    throw new Error(`Missing example file: ${name}`);
+const stripRuffHeader = (source: string): string =>
+  source.replace(/^# ruff: noqa:[^\n]*\n/, "");
+
+export const BENCHMARK_EXAMPLES = EXAMPLE_SPECS.map(([name, file]) => {
+  const raw = EXAMPLE_MODULES[`../kinematics/src/kinematics/examples/${file}`];
+  if (raw === undefined) {
+    throw new Error(`Missing example file: ${file}`);
   }
-  return { name, body };
+  return { name, body: stripRuffHeader(raw) };
 });
 
 export const newId = () =>

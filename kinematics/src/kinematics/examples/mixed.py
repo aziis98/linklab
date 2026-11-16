@@ -1,5 +1,5 @@
 # ruff: noqa: F821 -- evaluated inside the scene DSL namespace
-
+# Mixed Dimensions: a circle and an isolated point
 r1 = rod(Vec(1, 1), origin, id="r1")
 r2 = rod(Vec(1, -1), origin, id="r2")
 r3 = rod(origin, up, id="r3")
