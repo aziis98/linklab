@@ -43,6 +43,13 @@ class ConstructionRenderer {
     jointActive: new THREE.MeshPhongMaterial({ shininess: 50 }),
     pin: new THREE.MeshPhongMaterial({ shininess: 30 }),
     pinActive: new THREE.MeshPhongMaterial({ shininess: 35 }),
+    cable: new THREE.MeshPhongMaterial({ shininess: 25 }),
+    cableActive: new THREE.MeshPhongMaterial({ shininess: 35 }),
+    cableHit: new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+    }),
   };
   meshMetadata = new Map<
     THREE.Mesh,
@@ -50,7 +57,12 @@ class ConstructionRenderer {
   >();
   edges: { a: string; b: string; cylinder: THREE.Mesh; ends: THREE.Mesh[] }[] =
     [];
-  cables: {constraint:SceneData["constraints"][number]; meshes:THREE.Mesh[]; material:THREE.MeshPhongMaterial; slack:boolean}[] = [];
+  cables: {
+    constraint: SceneData["constraints"][number];
+    meshes: THREE.Mesh[];
+    hitMesh: THREE.Mesh;
+    slack: boolean;
+  }[] = [];
   joints: { key: string; mesh: THREE.Mesh }[] = [];
   rings: { id: string; mesh: THREE.Mesh; radius: number }[] = [];
   labels: { object: SceneData["objects"][number]; element: HTMLSpanElement }[] =
@@ -182,10 +194,26 @@ class ConstructionRenderer {
       labels.append(label);
       this.labels.push({ object, element: label });
     }
-    for(const constraint of scene.constraints.filter(c=>c.kind==='cable')){
-      const material=new THREE.MeshPhongMaterial({color:getComputedStyle(canvas).getPropertyValue('--cad-cable').trim()});
-      const meshes=Array.from({length:16},()=>{const mesh=new THREE.Mesh(this.cylinder,material);this.world.add(mesh);return mesh;});
-      this.cables.push({constraint,meshes,material,slack:false});
+    for (const constraint of scene.constraints.filter(
+      (c) => c.kind === "cable",
+    )) {
+      const pick: ConstructionPick = { keys: [], matchIds: [constraint.id] };
+      const hitMesh = new THREE.Mesh(this.cylinder, this.materials.cableHit);
+      this.world.add(hitMesh);
+      this.pickables.push(hitMesh);
+      this.picks.set(hitMesh, pick);
+      const meshes = Array.from({ length: 16 }, () => {
+        const mesh = new THREE.Mesh(this.cylinder, this.materials.cable);
+        this.addMesh(
+          mesh,
+          pick,
+          this.materials.cable,
+          this.materials.cableActive,
+          [constraint.id],
+        );
+        return mesh;
+      });
+      this.cables.push({ constraint, meshes, hitMesh, slack: false });
     }
     this.recolor(canvas);
   }
@@ -232,6 +260,9 @@ class ConstructionRenderer {
     this.materials.pinActive.color
       .copy(this.materials.pin.color)
       .lerp(accent, 0.55);
+
+    this.materials.cable.color.copy(color("--cad-cable"));
+    this.materials.cableActive.color.copy(accent);
   }
   setHighlight(highlightId: string | string[] | null) {
     const activeIds = !highlightId
@@ -275,10 +306,29 @@ class ConstructionRenderer {
         mesh.scale.setScalar(r);
       });
     }
-    for(const cable of this.cables){
-      const a=new THREE.Vector3(...configuration[cable.constraint.a]),b=new THREE.Vector3(...configuration[cable.constraint.b!]),delta=b.clone().sub(a),length=delta.length(),slack=((cable.constraint.length??0)-length)/this.cableScale>(cable.slack?1e-8:5e-8);cable.slack=slack;
-      const css=getComputedStyle(this.renderer.domElement);cable.material.color.set(css.getPropertyValue(activeIds?.has(cable.constraint.id)?'--accent':'--cad-cable').trim());
-      cable.meshes.forEach((mesh,i)=>{const t=(i+.5)/16;mesh.position.copy(a).addScaledVector(delta,t);mesh.quaternion.setFromUnitVectors(y,delta.clone().normalize());mesh.scale.set(r*.35,Math.max(length/16*(slack?.6:1),1e-8),r*.35);});
+    for (const cable of this.cables) {
+      const a = new THREE.Vector3(...configuration[cable.constraint.a]),
+        b = new THREE.Vector3(...configuration[cable.constraint.b!]),
+        delta = b.clone().sub(a),
+        length = delta.length(),
+        slack =
+          ((cable.constraint.length ?? 0) - length) / this.cableScale >
+          (cable.slack ? 1e-8 : 5e-8);
+      cable.slack = slack;
+      const dir = length > 1e-12 ? delta.clone().normalize() : y.clone();
+      cable.hitMesh.position.copy(a).add(b).multiplyScalar(0.5);
+      cable.hitMesh.quaternion.setFromUnitVectors(y, dir);
+      cable.hitMesh.scale.set(r * 1.1, Math.max(length, 1e-8), r * 1.1);
+      cable.meshes.forEach((mesh, i) => {
+        const t = (i + 0.5) / 16;
+        mesh.position.copy(a).addScaledVector(delta, t);
+        mesh.quaternion.setFromUnitVectors(y, dir);
+        mesh.scale.set(
+          r * 0.35,
+          Math.max((length / 16) * (slack ? 0.6 : 1), 1e-8),
+          r * 0.35,
+        );
+      });
     }
     for (const { key, mesh } of this.joints) {
       mesh.position.set(...configuration[key]);
@@ -349,7 +399,6 @@ class ConstructionRenderer {
     return hit ? this.picks.get(hit.object)! : { keys: [] };
   }
   dispose() {
-    for(const cable of this.cables)cable.material.dispose();
     this.cylinder.dispose();
     this.sphere.dispose();
     for (const ring of this.rings) ring.mesh.geometry.dispose();
