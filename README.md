@@ -2,7 +2,7 @@
 
 Explore rigid linkages, constraints, and their motion spaces in 2D and 3D.
 
-![LinkLab](docs/hero.jpg)
+![LinkLab](docs/hero_bordered.png)
 
 ## Overview
 
