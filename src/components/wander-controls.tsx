@@ -43,6 +43,8 @@ export function WanderControls({
   const [buffering, setBuffering] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [turning, setTurning] = useState(".8");
+  const [repulsion,setRepulsion]=useState(0.5);
+  const repulsionRef=useRef(repulsion);repulsionRef.current=repulsion;
   const generation = useRef(0),
     job = useRef<number | null>(null);
   const frames = useRef<Frame[]>([]),
@@ -100,7 +102,7 @@ export function WanderControls({
         op: "wander_start",
         revision,
         configuration: pose,
-        settings: { seed, turning: Number(turning) },
+        settings: { seed, turning: Number(turning), boundary_repulsion: repulsionRef.current },
       });
       if (gen !== generation.current) {
         void request({
@@ -128,6 +130,7 @@ export function WanderControls({
         }
         const batch = await request<Batch>({
           op: "wander_step",
+          boundary_repulsion: repulsionRef.current,
           revision,
           job_id: initial.job_id,
         });
@@ -193,6 +196,11 @@ export function WanderControls({
           <span>Speed <output>{speed.toFixed(2).replace(/\.?0+$/, "")}×</output></span>
           <input aria-label="Wander speed" type="range" style={{ "--range-progress": `${((speed - 0.25) / 3.75) * 100}%` }} min="0.25" max="4" step="0.25" value={speed} onInput={(e) => onSpeed(Number(e.currentTarget.value))} />
           <span class="wander-speed__scale"><span>0.25×</span><span>4×</span></span>
+        </label>
+        <label class="wander-speed">
+          <span>Boundary repulsion <output>{repulsion===0?"Off":`${repulsion.toFixed(1)}×`}</output></span>
+          <input aria-label="Boundary repulsion" type="range" min="0" max="4" step="0.1" value={repulsion} style={{"--range-progress":`${repulsion/4*100}%`}} onInput={(e)=>setRepulsion(Number(e.currentTarget.value))}/>
+          <span class="wander-speed__scale"><span>Off</span><span>Strong</span></span>
         </label>
         <Dropdown
           label="Wander steering"

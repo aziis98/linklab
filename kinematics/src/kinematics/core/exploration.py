@@ -159,6 +159,10 @@ class Exploration:
                     directions = probes
                     self.unresolved_nodes.add(i)
             for direction in directions:
+                if self.engine.cables:
+                    direction = self.engine.direction(x, direction)
+                    if np.linalg.norm(direction) < 1e-10:
+                        continue
                 self.frontier.append((i, direction))
         return i
 
@@ -236,6 +240,8 @@ class Exploration:
         phase: FloatArray | None = None,
     ) -> FloatArray:
         """Fix tangent coordinates while correcting the normal constraint error."""
+        if self.engine.cables:
+            return self.engine.project(predictor)
         phase = self.phase(reference) if phase is None else phase
         target = predictor.ravel()
         e = self.engine

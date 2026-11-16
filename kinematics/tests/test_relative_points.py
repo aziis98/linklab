@@ -136,15 +136,18 @@ def test_hopf_link_attachments_match_the_specified_circles():
     scene = build_scene(
         (Path(__file__).parents[1] / "src/kinematics/examples/hopf_link.py").read_text()
     )
-    assert len(scene.objects) == 6
-    assert len(scene.constraints) == 8
+    assert len(scene.objects) == 2
+    assert len(scene.constraints) == 4
     restored = Scene.from_dict(scene.to_dict())
     assert set(restored.objects[0].point_labels.values()) == {"a1", "a2", "a3", "a4"}
     assert set(restored.objects[1].point_labels.values()) == {"b1", "b2", "b3", "b4"}
-    for cable in scene.objects[2:]:
-        a, b = cable.start.pos, cable.end.pos
+    points = {
+        f"{o.id}:{n}": Vec(*p) for o in scene.objects for n, p in o.points.items()
+    }
+    for cable in scene.constraints:
+        a, b = points[cable.a], points[cable.b]
         assert a.z == 0 and sp.simplify(a.x**2 + a.y**2) == 1
         assert b.y == 0 and sp.simplify((b.x - 1) ** 2 + b.z**2) == 1
-        assert sp.simplify(cable.length**2 - sp.Rational(11, 8)) == 0
+        assert sp.simplify(cable.value - sp.Rational(11, 8)) == 0
     engine = Engine(scene)
     assert engine.error(engine.assemble()) < 1e-9

@@ -54,11 +54,23 @@ def preview(engine, keys, targets, weights=None):
 
     def residual(z):
         x = embed(z)
-        return np.r_[e.residual(x), regularization * (x[free] - before.ravel()[free])]
+        cable, _ = e.cable_rows(x)
+        return np.r_[
+            e.residual(x),
+            np.maximum(cable, 0),
+            regularization * (x[free] - before.ravel()[free]),
+        ]
 
     def jac(z):
         x = embed(z)
-        return np.vstack((e.jac(x)[:, free] @ Z, regularization * Z))
+        cable, rows = e.cable_rows(x)
+        return np.vstack(
+            (
+                e.jac(x)[:, free] @ Z,
+                (rows * (cable > 0)[:, None])[:, free] @ Z,
+                regularization * Z,
+            )
+        )
 
     if Z.shape[1]:
         solution = least_squares(
@@ -115,13 +127,14 @@ def preview(engine, keys, targets, weights=None):
         elif c.kind == "pin":
             b = [float(v) for v in c.value]
             error = np.linalg.norm(x[i] - np.array(b[:d])) / e.scale
-        elif c.kind == "distance":
+        elif c.kind in ("distance", "cable"):
             j = e.index[c.b]
             b = point(j)
             length = float(c.value) ** 0.5
-            error = abs(np.linalg.norm(x[i] - x[j]) - length) / max(
-                length, 0.05 * e.scale
-            )
+            difference = np.linalg.norm(x[i] - x[j]) - length
+            error = (
+                max(0, difference) if c.kind == "cable" else abs(difference)
+            ) / max(length, 0.05 * e.scale)
         elif c.kind == "plane":
             p, n = (np.array(v, float) for v in c.value)
             a3 = np.array(a)

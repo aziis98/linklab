@@ -124,3 +124,21 @@ export function nullspaces(a:Float64Array,m:number,n:number,rcond=1e-8) {
  }
  return {right:{data:right,cols:zero.length},left:{data:left,cols:count}};
 }
+
+function activeFit(c:Float64Array,m:number,n:number,target:ArrayLike<number>,a:Float64Array,k:number,bounds:ArrayLike<number>,active:number[]){
+ for(let iteration=0;iteration<100;iteration++){
+ const aa=Float64Array.from(active.flatMap(i=>Array.from(a.slice(i*n,(i+1)*n)))),b=active.map(i=>bounds[i]),p=active.length?solve(aa,active.length,n,b,1e-10):new Float64Array(n),z=nullspace(aa,active.length,n,1e-10);
+ if(active.some((_,i)=>Math.abs(dot(aa.subarray(i*n,(i+1)*n),p)-b[i])>1e-8))throw Error('Incompatible active cable bounds');
+ const cp=multiply(c,m,n,p,1),cz=multiply(c,m,n,z.data,z.cols),q=solve(cz,m,z.cols,Float64Array.from(target,(v,i)=>v-cp[i]),1e-10),x=Float64Array.from(p,(v,i)=>v+dot(z.data.subarray(i*z.cols,(i+1)*z.cols),q));
+ let worst=-1,error=1e-10;for(let i=0;i<k;i++){const v=dot(a.subarray(i*n,(i+1)*n),x)-bounds[i];if(v>error){worst=i;error=v;}}
+ if(worst>=0){if(active.includes(worst))throw Error('Cable active set did not converge');active.push(worst);continue;}
+ if(active.length){const residual=Float64Array.from(multiply(c,m,n,x,1),(v,i)=>v-target[i]),gradient=multiply(transpose(c,m,n),n,m,residual,1),mu=solve(transpose(aa,active.length,n),n,active.length,Float64Array.from(gradient,v=>-v),1e-10);let bad=-1;for(let i=0;i<mu.length;i++)if(mu[i]<-1e-10&&(bad<0||mu[i]<mu[bad]))bad=i;if(bad>=0){active.splice(bad,1);continue;}}
+ return x;
+ }throw Error('Cable active set exceeded iteration budget');
+}
+
+export function constrainedFit(c:Float64Array,m:number,n:number,target:ArrayLike<number>,a:Float64Array,k:number,bounds:ArrayLike<number>,workingSet:number[]=[]){
+ let active=workingSet.filter(i=>i>=0&&i<k);const hadWarmStart=active.length>0;let result:Float64Array;
+ try{result=activeFit(c,m,n,target,a,k,bounds,active);}catch(error){if(!hadWarmStart)throw error;active=[];result=activeFit(c,m,n,target,a,k,bounds,active);}
+ workingSet.splice(0,workingSet.length,...active);return result;
+}

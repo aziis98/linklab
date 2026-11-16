@@ -65,7 +65,7 @@ def export_model(session: Session) -> dict[str, object]:
                         )
             rows.append({"linear": [], "constant": 0, "quadratic": terms})
     return {
-        "version": 1,
+        "version": 2,
         "revision": session.revision,
         "dimension": e.d,
         "keys": e.keys,
@@ -74,6 +74,7 @@ def export_model(session: Session) -> dict[str, object]:
         "scale": s,
         "rows": rows,
         "lengths": e.lengths,
+        "cables": e.cables,
         "equal": e.equal,
         "pins": [(i, p.tolist()) for i, p in list(e.pins.items()) + e.fixed_equations],
         "planes": [(i, p.tolist(), n.tolist()) for i, p, n in e.planes],

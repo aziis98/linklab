@@ -30,7 +30,7 @@ export const BENCHMARK_EXAMPLES = [
   {
     name: "hopf-link-four-cables-3d.py",
     body: `# Hopf link: A=(cos(theta),sin(theta),0), B=(1+cos(phi),0,sin(phi)).
-# The four cables shown here are modeled as fixed-length rods (no slack).
+# Ideal cables allow shortening, but prevent stretching beyond their initial lengths.
 scene_dimension(3)
 A = ring(origin, 1, id="A", fixed=True)
 B = ring(right, 1, id="B", normal=down)
@@ -51,21 +51,10 @@ b2 = B.rel(Vec(-3/4, -q), label="b2")
 b3 = B.rel(Vec(-1/4, -p), label="b3")
 b4 = B.rel(Vec(-1/4, p), label="b4")
 
-cable1 = rod(a1, b1, id="cable1")
-coincident(a1, cable1.start, id="joint_a1")
-coincident(cable1.end, b1, id="joint_b1")
-
-cable2 = rod(a2, b2, id="cable2")
-coincident(a2, cable2.start, id="joint_a2")
-coincident(cable2.end, b2, id="joint_b2")
-
-cable3 = rod(a3, b3, id="cable3")
-coincident(a3, cable3.start, id="joint_a3")
-coincident(cable3.end, b3, id="joint_b3")
-
-cable4 = rod(a4, b4, id="cable4")
-coincident(a4, cable4.start, id="joint_a4")
-coincident(cable4.end, b4, id="joint_b4")
+cable1 = cable(a1, b1, id="cable1")
+cable2 = cable(a2, b2, id="cable2")
+cable3 = cable(a3, b3, id="cable3")
+cable4 = cable(a4, b4, id="cable4")
 `,
   },
   {
@@ -245,11 +234,6 @@ export const checkReset = () => {
     } catch {
       /* ignore */
     }
-    params.delete("reset");
-    const search = params.toString();
-    const newUrl =
-      window.location.pathname + (search ? `?${search}` : "") + window.location.hash;
-    window.history.replaceState(null, "", newUrl);
     return true;
   }
   return false;
@@ -271,6 +255,44 @@ rotor = body({}, id="rotor")
 pin(rotor.point("origin"), origin, id="spherical_joint")
 # Click Wander. The rotor turns freely around its fixed corner in all 3 axes.`,
   ];
+  const previousHopfExplicit = `# Hopf link: A=(cos(theta),sin(theta),0), B=(1+cos(phi),0,sin(phi)).
+# The four cables shown here are modeled as fixed-length rods (no slack).
+scene_dimension(3)
+A = ring(origin, 1, id="A", fixed=True)
+B = ring(right, 1, id="B", normal=down)
+
+L = right / 4
+H = right * 3 / 4
+p = sqrt(15) / 4
+q = sqrt(7) / 4
+
+# A's local frame is XY; B's local frame is XZ, centered at (1,0,0).
+a1 = A.rel(L + up*p, label="a1")
+a2 = A.rel(L - up*p, label="a2")
+a3 = A.rel(H + up*q, label="a3")
+a4 = A.rel(H - up*q, label="a4")
+
+b1 = B.rel(Vec(-3/4, q), label="b1")
+b2 = B.rel(Vec(-3/4, -q), label="b2")
+b3 = B.rel(Vec(-1/4, -p), label="b3")
+b4 = B.rel(Vec(-1/4, p), label="b4")
+
+cable1 = rod(a1, b1, id="cable1")
+coincident(a1, cable1.start, id="joint_a1")
+coincident(cable1.end, b1, id="joint_b1")
+
+cable2 = rod(a2, b2, id="cable2")
+coincident(a2, cable2.start, id="joint_a2")
+coincident(cable2.end, b2, id="joint_b2")
+
+cable3 = rod(a3, b3, id="cable3")
+coincident(a3, cable3.start, id="joint_a3")
+coincident(cable3.end, b3, id="joint_b3")
+
+cable4 = rod(a4, b4, id="cable4")
+coincident(a4, cable4.start, id="joint_a4")
+coincident(cable4.end, b4, id="joint_b4")
+`;
   const previousHopf = `# Hopf link: A=(cos(theta),sin(theta),0), B=(1+cos(phi),0,sin(phi)).
 # The four cables shown here are modeled as fixed-length rods (no slack).
 scene_dimension(3)
@@ -295,7 +317,7 @@ for i, (a, b) in enumerate(zip(a_points, b_points)):
 `;
   const updated = files.map((file) =>
     ((file.name === "spatial-rotor.py" && previousRotors.some((p) => p.trim() === file.body.trim())) ||
-     (file.name === "hopf-link-four-cables-3d.py" && file.body.trim() === previousHopf.trim()))
+     (file.name === "hopf-link-four-cables-3d.py" && [previousHopf,previousHopfExplicit].some(previous=>file.body.trim() === previous.trim())))
       ? {
           ...file,
           body: BENCHMARK_EXAMPLES.find((e) => e.name === file.name)!.body,

@@ -29,6 +29,14 @@ def fixtures():
                 f"scene_dimension({dimension})\nr=rod(origin,up)\nplane(r,origin,right)",
             )
         )
+    for dimension in (2, 3):
+        for state, center in (("slack", ".5"), ("taut", "1")):
+            scenes.append(
+                (
+                    f"cable_{state}_{dimension}d",
+                    f"scene_dimension({dimension})\na=body({{}},fixed=True)\nb=body({{}},center=right*{center})\ncable(a.origin,b.origin,length=1)",
+                )
+            )
     for name, source in scenes:
         session = Session()
         session.run(source)

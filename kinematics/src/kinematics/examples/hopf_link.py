@@ -1,6 +1,6 @@
 # ruff: noqa: F821 -- evaluated inside the scene DSL namespace
 # Hopf link: A=(cos(theta),sin(theta),0), B=(1+cos(phi),0,sin(phi)).
-# The four cables shown here are modeled as fixed-length rods (no slack).
+# Ideal cables allow shortening, but prevent stretching beyond their initial lengths.
 scene_dimension(3)
 A = ring(origin, 1, id="A", fixed=True)
 B = ring(right, 1, id="B", normal=down)
@@ -21,18 +21,7 @@ b2 = B.rel(Vec(-3/4, -q), label="b2")
 b3 = B.rel(Vec(-1/4, -p), label="b3")
 b4 = B.rel(Vec(-1/4, p), label="b4")
 
-cable1 = rod(a1, b1, id="cable1")
-coincident(a1, cable1.start, id="joint_a1")
-coincident(cable1.end, b1, id="joint_b1")
-
-cable2 = rod(a2, b2, id="cable2")
-coincident(a2, cable2.start, id="joint_a2")
-coincident(cable2.end, b2, id="joint_b2")
-
-cable3 = rod(a3, b3, id="cable3")
-coincident(a3, cable3.start, id="joint_a3")
-coincident(cable3.end, b3, id="joint_b3")
-
-cable4 = rod(a4, b4, id="cable4")
-coincident(a4, cable4.start, id="joint_a4")
-coincident(cable4.end, b4, id="joint_b4")
+cable1 = cable(a1, b1, id="cable1")
+cable2 = cable(a2, b2, id="cable2")
+cable3 = cable(a3, b3, id="cable3")
+cable4 = cable(a4, b4, id="cable4")

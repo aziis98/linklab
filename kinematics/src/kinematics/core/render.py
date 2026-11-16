@@ -40,6 +40,18 @@ def render_png(scene, configuration, path, camera=(35, 25), overlays=()):
                 linewidth=3,
                 marker="o",
             )
+    for cable in scene.constraints:
+        if cable.kind != "cable":
+            continue
+        a = np.array(configuration[cable.a])
+        b = np.array(configuration[cable.b])
+        slack = np.linalg.norm(a - b) < float(cable.value) ** 0.5 - 1e-8
+        ax.plot(
+            *np.array([a, b]).T[: scene.dimension],
+            color="#5eead4",
+            linewidth=1.2,
+            linestyle="--" if slack else "-",
+        )
     for curve in overlays:
         p = np.asarray(curve)
         ax.plot(*p.T[: scene.dimension], color="#f59e0b", linestyle="--")

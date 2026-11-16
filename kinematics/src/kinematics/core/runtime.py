@@ -85,6 +85,7 @@ class Session:
         return {
             "revision": self.revision,
             "dimension": e.d,
+            "scale": e.scale,
             "objects": [
                 {
                     "id": o.id,
@@ -102,6 +103,7 @@ class Session:
                     "kind": c.kind,
                     "a": c.a,
                     "b": c.b,
+                    **({"length": float(c.value) ** 0.5} if c.kind == "cable" else {}),
                     **({"source_span": list(c.source_span)} if c.source_span else {}),
                 }
                 for c in e.scene.constraints
@@ -156,6 +158,7 @@ class Session:
         op = message["op"]
         if op == "numerical_model":
             from .numerical_model import export_model
+
             return export_model(self)
         if op == "snapshot":
             return self.snapshot()
@@ -172,7 +175,10 @@ class Session:
             live.current = self.engine.current.copy()
             if "configuration" in message:
                 live.current = live.project(
-                    np.array([message["configuration"][k][: live.d] for k in live.keys])
+                    np.array(
+                        [message["configuration"][k][: live.d] for k in live.keys],
+                        dtype=float,
+                    )
                 )
             self.wander_job = None
             job = Wander(live, **message.get("settings", {}))
@@ -191,6 +197,10 @@ class Session:
             if message.get("job_id") != self.wander_job.job_id:
                 raise ValueError("stale wander job")
             if op == "wander_step":
+                if "boundary_repulsion" in message:
+                    self.wander_job.set_boundary_repulsion(
+                        message["boundary_repulsion"]
+                    )
                 return self.wander_job.advance()
             if op == "wander_cancel":
                 self.wander_job = None

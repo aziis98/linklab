@@ -522,6 +522,26 @@ class Scene:
         self.constraints.append(c)
         return c
 
+    def cable(
+        self,
+        a: PointRef,
+        b: PointRef,
+        length: Scalar | None = None,
+        id: str | None = None,
+    ) -> Constraint:
+        squared = (
+            sum((x - y) ** 2 for x, y in zip(coords(a), coords(b)))
+            if length is None
+            else exact(length) ** 2
+        )
+        if length is not None and exact(length) < 0:
+            raise ValueError("cable length must be nonnegative")
+        c = Constraint(
+            "cable", a.key, b.key, squared, id or f"cable{len(self.constraints) + 1}"
+        )
+        self.constraints.append(c)
+        return c
+
     def fixed(self, obj: RigidObject) -> None:
         obj.fixed = True
 
@@ -741,6 +761,7 @@ def build_scene(source: str, dimension: int | None = None) -> Scene:
         coincident=track_source(scene.coincident),
         constraint_point_point=track_source(scene.coincident),
         distance=track_source(scene.distance),
+        cable=track_source(scene.cable),
         fixed=scene.fixed,
         point_on_plane=track_source(scene.point_on_plane),
         plane=track_source(scene.plane),

@@ -23,6 +23,7 @@ const entry = (
 
 /** Defaults are editable snippet fields; repeated field numbers stay linked. */
 export const DSL_SNIPPETS: readonly SnippetDefinition[] = [
+  entry("Constraints","cable",'cable(${1:a.start}, ${2:b.end}, id="${3:tether}")${0}',"maximum distance; initial length by default"),
   entry(
     "Objects",
     "rod",
@@ -468,7 +469,7 @@ export function dslCompletionSource(
       })),
       validFor: /^\d*$/,
     };
-  const arity = { rod: 2, ring: 2, body: 1 }[constructor];
+  const arity = { rod: 2, ring: 2, body: 1, cable: 2 }[constructor];
   if (arity !== undefined) {
     let index = 0;
     for (
@@ -487,11 +488,11 @@ export function dslCompletionSource(
             type: "property",
             detail: "object identifier",
           }),
-          snippetCompletion("fixed=${1:True}${0}", {
+          ...(constructor === "cable" ? [snippetCompletion("length=${1:1}${0}", {label:"length",type:"property",detail:"maximum cable length"})] : [snippetCompletion("fixed=${1:True}${0}", {
             label: "fixed",
             type: "property",
             detail: "ground this object",
-          }),
+          })]),
           ...(constructor === "rod" ? [
             snippetCompletion('frame="${1:full}"${0}', { label: "frame", type: "property", detail: "axial (default) or full material frame" }),
             snippetCompletion('normal=${1:forward}${0}', { label: "normal", type: "property", detail: "initial local XY plane normal" }),
@@ -507,7 +508,7 @@ export function dslCompletionSource(
   }
   const before = state.sliceDoc(state.doc.lineAt(pos).from, pos);
   const call =
-    /\b(pin|coincident|constraint_point_point|distance|point_on_plane|plane|parallel|fixed)\(\s*[\w.]*$/.exec(
+    /\b(pin|coincident|constraint_point_point|distance|cable|point_on_plane|plane|parallel|fixed)\(\s*[\w.]*$/.exec(
       before,
     )?.[1];
   const objectNames: Completion[] = objects.map((o) => ({

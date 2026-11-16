@@ -69,8 +69,12 @@ class Engine:
             else 1,
             1e-6,
         )
+        self._cable_cache = None
+        self._mobility_cache = None
+        self._working_sets = {"drag": [], "project": [], "direction": []}
         self.pins = {}
         self.equal = []
+        self.cables = []
         self.lengths = []
         self.planes = []
         self.parallels = []
@@ -109,6 +113,11 @@ class Engine:
                 self.pins[i] = np.array([float(v) for v in c.value[: self.d]])
             elif c.kind == "coincident":
                 self.equal.append((i, self.index[c.b]))
+            elif c.kind == "cable":
+                if float(c.value) == 0:
+                    self.equal.append((i, self.index[c.b]))
+                else:
+                    self.cables.append((i, self.index[c.b], float(c.value)))
             elif c.kind == "distance":
                 self.lengths.append((i, self.index[c.b], float(c.value)))
             elif c.kind == "parallel":
@@ -222,11 +231,77 @@ class Engine:
                 residual,
                 abs(np.linalg.norm(x[i] - x[j]) - np.sqrt(squared_length)) / self.scale,
             )
+        for i, j, length in self.cables:
+            residual = max(
+                residual,
+                max(0, np.linalg.norm(x[i] - x[j]) - np.sqrt(length)) / self.scale,
+            )
         return residual
 
+    def cable_rows(self, x):
+        x = np.asarray(x).reshape(-1, self.d)
+        if self._cable_cache is not None and np.array_equal(self._cable_cache[0], x):
+            return self._cable_cache[1:]
+        values = []
+        rows = []
+        for i, j, length in self.cables:
+            delta = x[i] - x[j]
+            values.append((delta @ delta - length) / (2 * self.scale**2))
+            row = np.zeros_like(x)
+            row[i] = delta / self.scale**2
+            row[j] = -row[i]
+            rows.append(row.ravel())
+        values = np.array(values)
+        rows = np.array(rows).reshape(len(rows), x.size)
+        values.setflags(write=False)
+        rows.setflags(write=False)
+        self._cable_cache = (x.copy(), values, rows)
+        return values, rows
+
+    def direction(self, x, desired):
+        from .inequalities import constrained_fit
+
+        x = np.asarray(x).reshape(-1, self.d)
+        t = (
+            np.array(self.mobility(x)["linear_compatible_tangents"])
+            .reshape(-1, x.size)
+            .T
+        )
+        if not t.shape[1]:
+            return np.zeros(x.size)
+        g, a = self.cable_rows(x)
+        # Positive slack can be consumed; active bounds forbid outward motion.
+        return t @ constrained_fit(
+            t,
+            np.asarray(desired).ravel(),
+            a @ t,
+            np.maximum(-g, 0),
+            self._working_sets["direction"],
+        )
+
     def project(self, guess: FloatArray) -> FloatArray:
+        guess = np.asarray(guess, dtype=float)
         if not len(self.residual(guess.ravel())):
             return guess.copy()
+        if self.cables:
+            from .inequalities import constrained_fit
+
+            x = guess.copy().ravel()
+            for _ in range(100):
+                if self.error(x.reshape(-1, self.d)) <= 1e-10:
+                    return x.reshape(-1, self.d)
+                r = self.residual(x)
+                j = self.jac(x)
+                p = np.linalg.lstsq(j, -r, rcond=1e-10)[0]
+                z = null_space(j, rcond=1e-10)
+                g, a = self.cable_rows(x)
+                step = p + z @ constrained_fit(
+                    z, -p, a @ z, -g - a @ p, self._working_sets["project"]
+                )
+                x += step
+            if self.error(x.reshape(-1, self.d)) > 1e-9:
+                raise ValueError("Cable assembly did not converge")
+            return x.reshape(-1, self.d)
         sol = least_squares(
             self.residual,
             guess.ravel(),
@@ -245,18 +320,26 @@ class Engine:
 
     def mobility(self, x: FloatArray | None = None) -> MobilityResult:
         x = self.current if x is None else x
+        signature = tuple((i, p.tobytes()) for i, p in self.pins.items())
+        if self._mobility_cache is not None:
+            pose, previous_signature, result = self._mobility_cache
+            if signature == previous_signature and np.array_equal(pose, x):
+                return result
+        result = self._compute_mobility(x)
+        self._mobility_cache = (x.copy(), signature, result)
+        return result
+
+    def _compute_mobility(self, x: FloatArray) -> MobilityResult:
         J = self.jac(x.ravel())
         T = null_space(J, rcond=1e-8)
         U = null_space(J.T, rcond=1e-8)
         forms = []
+        offset=J.shape[0]-(3 if self.d==3 else 1)*len(self.parallels)
         for u in U.T:
             H = np.zeros((T.shape[1], T.shape[1]))
             for k, (i, j, _) in enumerate(self.lengths):
                 D = T[i * self.d : (i + 1) * self.d] - T[j * self.d : (j + 1) * self.d]
                 H += u[k] * (D.T @ D) / self.scale**2
-            offset = len(self.residual(x.ravel())) - (3 if self.d == 3 else 1) * len(
-                self.parallels
-            )
             for pi, (i, j, k, l) in enumerate(self.parallels):
                 A = T[j * self.d : (j + 1) * self.d] - T[i * self.d : (i + 1) * self.d]
                 B = T[l * self.d : (l + 1) * self.d] - T[k * self.d : (k + 1) * self.d]
@@ -296,7 +379,7 @@ class Engine:
         )
         locked = T.shape[1] > 0 and compatible.shape[1] == 0
         nonzero = any(np.linalg.norm(H) > 1e-8 for H in forms)
-        return {
+        result = {
             "first_order": T.shape[1],
             "second_order": "locked"
             if locked
@@ -314,6 +397,12 @@ class Engine:
             "rank": int(x.size - T.shape[1]),
             "residual": self.error(x),
         }
+
+        if self.cables:
+            from .inequalities import cable_mobility
+
+            result = cable_mobility(self, x, result, J, T)
+        return result
 
     def assemble(self) -> FloatArray:
         self.current = self.project(self.initial)
@@ -347,9 +436,23 @@ class Engine:
                 .T
             )
             rows = np.array([i * self.d + a for i in ids for a in range(self.d)])
-            delta = np.linalg.lstsq(
-                objective @ T[rows], error_to_target(self.current), rcond=1e-8
-            )[0]
+            if np.linalg.norm(objective @ T[rows]) < 1e-12:
+                break
+            if self.cables:
+                from .inequalities import constrained_fit
+
+                g, a = self.cable_rows(self.current)
+                delta = constrained_fit(
+                    objective @ T[rows],
+                    error_to_target(self.current),
+                    a @ T,
+                    np.maximum(-g, 0),
+                    self._working_sets["drag"],
+                )
+            else:
+                delta = np.linalg.lstsq(
+                    objective @ T[rows], error_to_target(self.current), rcond=1e-8
+                )[0]
             step = T @ delta
             norm = np.linalg.norm(step)
             if norm < 1e-9 * self.scale:
@@ -397,7 +500,7 @@ class Engine:
         target = np.array(targets, float)[:, : self.d]
         before = self.current.copy()
         adjacency = [set() for _ in before]
-        for i, j, _ in self.lengths:
+        for i, j, _ in self.lengths + self.cables:
             adjacency[i].add(j)
             adjacency[j].add(i)
         for point, affine_weights in self.affine_points:

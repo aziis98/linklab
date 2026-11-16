@@ -12,6 +12,7 @@ const ThreeConstruction = lazy(() => import("./three-construction"));
 type V = [number, number, number];
 type Config = Record<string, V>;
 interface Mobility {
+  motion_kind?: string;
   first_order: number;
   second_order: string;
   residual: number;
@@ -44,6 +45,7 @@ interface Preview {
 const previewColor = (severity = 0) =>
   `color-mix(in srgb, var(--cad-rod-drag-stroke) ${(1 - Math.max(0, Math.min(1, severity))) * 100}%, var(--danger))`;
 export interface SceneData {
+  scale?:number;
   revision: number;
   dimension: number;
   objects: {
@@ -59,6 +61,7 @@ export interface SceneData {
     kind: string;
     a: string;
     b: string | null;
+    length?: number;
     source_span?: [number, number, number, number];
   }[];
   configuration: Config;
@@ -108,6 +111,7 @@ export function Viewer({
     if (Array.isArray(highlightElementId)) return new Set(highlightElementId);
     return new Set([highlightElementId]);
   }, [highlightElementId]);
+  const cableStates=useRef(new Map<string,boolean>());
   const [explorationEpoch, setExplorationEpoch] = useState(0);
   const [playbackInterrupt, setPlaybackInterrupt] = useState(0);
   const [wanderCommand, setWanderCommand] = useState(0);
@@ -170,6 +174,7 @@ export function Viewer({
   }, []);
   useEffect(() => {
     revision.current++;
+    cableStates.current.clear();
     queued.current = null;
     drag.current = null;
     setRoadmap(null);
@@ -643,7 +648,8 @@ export function Viewer({
         }),
       );
     }
-    for (const key of keys.filter(
+    const jointKeys=[...new Set([...keys,...(scene?.constraints.flatMap(c=>[c.a,c.b].filter((key):key is string=>!!key&&key.startsWith(`${obj.id}:`)))??[])])];
+    for (const key of jointKeys.filter(
       (key) =>
         obj.kind !== "ring" ||
         scene?.constraints.some((c) => c.a === key || c.b === key),
@@ -711,6 +717,13 @@ export function Viewer({
         {obj.id}
       </text>,
     );
+  }
+  for(const cable of scene?.constraints.filter(c=>c.kind==='cable')??[]){
+    const a=configuration[cable.a],b=configuration[cable.b!];if(!a||!b)continue;
+    const line=segment(a,b);if(!line)continue;const[p,q]=line;
+    const gap=((cable.length??0)-Math.hypot(...sub(a,b)))/(scene?.scale??1);
+    const slack=gap>(cableStates.current.get(cable.id)?1e-8:5e-8);cableStates.current.set(cable.id,slack);
+    elements.push({id:cable.id,kind:'cable',depth:dot(mul(add(a,b),.5),ray),layer:1,matchIds:[cable.id],node:<g data-cable={cable.id} onPointerEnter={()=>onHoverElement?.(cable.id)} onPointerLeave={()=>onHoverElement?.(null)}><line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke="var(--cad-cable)" stroke-width="2.5" stroke-dasharray={slack?'5 4':undefined}/><title>{cable.id}: {Math.hypot(...sub(a,b)).toFixed(3)} / {cable.length?.toFixed(3)} · {slack?'slack':'taut'}</title></g>});
   }
   elements.sort(
     (a, b) => {
@@ -782,7 +795,7 @@ export function Viewer({
         {reassembling && <div role="status">Reassembling near the ghost…</div>}
         {analysis && (
           <div>
-            {scene?.dimension}D scene · 1st order: {analysis.first_order} · 2nd
+            {scene?.dimension}D scene · {analysis.motion_kind==='cone'?'Cable direction cone · equality tangent':'1st order'}: {analysis.first_order} · 2nd
             order: {analysis.second_order}
             <br />
             Residual: {analysis.residual.toExponential(2)}

@@ -52,6 +52,7 @@
 
     /* CAD viewer tokens (light mode) */
     --cad-bg: #f8fafc;
+    --cad-cable: #0f766e;
     --cad-grid: #e2e8f0;
     --cad-axis: #94a3b8;
     --cad-axis-label: #64748b;
@@ -96,6 +97,7 @@
 
         /* CAD viewer tokens (dark mode) */
         --cad-bg: #090d16;
+        --cad-cable: #5eead4;
         --cad-grid: #161f30;
         --cad-axis: #334155;
         --cad-axis-label: #64748b;

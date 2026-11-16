@@ -1,4 +1,4 @@
-import { dot, norm, solve, nullspace, nullspaces, multiply, eigenvalues } from './linalg';
+import { dot, norm, solve, nullspace, nullspaces, multiply, eigenvalues, constrainedFit } from './linalg';
 export type Config = Record<string, number[]>;
 type Row = {
     constant: number;
@@ -21,6 +21,7 @@ export interface Model {
     current: number[];
     scale: number;
     rows: Row[];
+    cables: [number,number,number][];
     lengths: [
         number,
         number,
@@ -51,6 +52,11 @@ export interface Model {
     parallels:[number,number,number,number][];
     isolated: number[][][];
 }
+interface MobilityState {
+ first_order:number;second_order:string;linear_compatible_dimension:number;
+ linear_compatible_tangents:number[][][];tangents:number[][][];quadratic_forms:number[][][];
+ rank:number;residual:number;basis:{data:Float64Array;cols:number};
+}
 export class Engine {
     x: Float64Array;
     initial: Float64Array;
@@ -59,7 +65,7 @@ export class Engine {
     d: number;
     model: Model;
     private coefficients: {constant:number; linear:Float64Array; quadratic:Float64Array}[];
-    constructor(model: Model) { this.model = model; this.coefficients = model.rows.map(row=>({constant:row.constant,linear:new Float64Array(row.linear.flat()),quadratic:new Float64Array(row.quadratic.flat())})); if (model.version !== 1)
+    constructor(model: Model) { this.model = model;model.cables ??= []; this.coefficients = model.rows.map(row=>({constant:row.constant,linear:new Float64Array(row.linear.flat()),quadratic:new Float64Array(row.quadratic.flat())})); if (model.version !== 1 && model.version !== 2)
         throw Error('Unsupported numerical model'); this.x = new Float64Array(model.current); this.initial = new Float64Array(model.initial); this.n = this.x.length; this.m = model.rows.length; this.d = model.dimension; }
     residual(x: Float64Array, out = new Float64Array(this.m)) {
         for(let r=0;r<this.m;r++){const row=this.coefficients[r];let v=row.constant;
@@ -98,7 +104,7 @@ export class Engine {
         v += (x[i * this.d + k] - x[j * this.d + k]) ** 2; return Math.sqrt(v); }
     error(x: Float64Array) { let e = 0; for (const v of this.residual(x))
         e = Math.max(e, Math.abs(v)); for (const [i, j, l] of this.model.lengths)
-        e = Math.max(e, Math.abs(this.distance(x, i, j) - Math.sqrt(l)) / this.model.scale); return e; }
+        e = Math.max(e, Math.abs(this.distance(x, i, j) - Math.sqrt(l)) / this.model.scale); for(const[i,j,l]of this.model.cables)e=Math.max(e,Math.max(0,this.distance(x,i,j)-Math.sqrt(l))/this.model.scale); return e; }
     fit(initial: Float64Array, residual: (x: Float64Array) => Float64Array, jac: (x: Float64Array) => Float64Array, budget = 300) { let x = initial.slice(), lambda = 1e-8; for (let it = 0; it < budget; it++) {
         const r = residual(x), a = jac(x), cost = dot(r, r);
         if (cost < 1e-27)
@@ -114,8 +120,12 @@ export class Engine {
         else
             lambda = Math.min(1e16, lambda * 10);
     } return x; }
-    project(guess: Float64Array) { const residualBuffer=new Float64Array(this.m),jacobianBuffer=new Float64Array(this.m*this.n);const x = this.fit(guess, x => this.residual(x,residualBuffer), x => this.jac(x,jacobianBuffer)); if (!Number.isFinite(this.error(x)) || this.error(x) > 1e-9)
+    cableRows(x:Float64Array){const values=new Float64Array(this.model.cables.length),rows=new Float64Array(this.model.cables.length*this.n);this.model.cables.forEach(([i,j,l],r)=>{let squared=0;for(let a=0;a<this.d;a++){const delta=x[i*this.d+a]-x[j*this.d+a];squared+=delta*delta;rows[r*this.n+i*this.d+a]=delta/this.model.scale**2;rows[r*this.n+j*this.d+a]=-delta/this.model.scale**2;}values[r]=(squared-l)/(2*this.model.scale**2);});return {values,rows};}
+    project(guess: Float64Array) {
+        if(this.model.cables.length){let x=guess.slice();for(let iteration=0;iteration<100;iteration++){if(this.error(x)<=1e-10)return x;const r=this.residual(x),j=this.jac(x),p=solve(j,this.m,this.n,Float64Array.from(r,v=>-v),1e-10),z=nullspace(j,this.m,this.n,1e-10),g=this.cableRows(x),ap=multiply(g.rows,g.values.length,this.n,p,1),az=multiply(g.rows,g.values.length,this.n,z.data,z.cols),q=constrainedFit(z.data,this.n,z.cols,Float64Array.from(p,v=>-v),az,g.values.length,Float64Array.from(g.values,(v,i)=>-v-ap[i]),this.workingSets.project),step=multiply(z.data,this.n,z.cols,q,1);x=Float64Array.from(x,(v,i)=>v+p[i]+step[i]);}if(this.error(x)>1e-9)throw Error('Cable assembly did not converge');return x;}
+ const residualBuffer=new Float64Array(this.m),jacobianBuffer=new Float64Array(this.m*this.n);const x = this.fit(guess, x => this.residual(x,residualBuffer), x => this.jac(x,jacobianBuffer)); if (!Number.isFinite(this.error(x)) || this.error(x) > 1e-9)
         throw Error('Projection did not converge'); return x; }
+    private workingSets={drag:[] as number[],project:[] as number[]};
     private analysisCache: {pose: Float64Array; value: ReturnType<Engine['computeMobility']>} | null = null;
     private previewBasisCache: {key: string; basis: ReturnType<typeof nullspace>} | null = null;
     mobility() {
@@ -148,8 +158,31 @@ export class Engine {
             compatible = { cols: z.cols, data: multiply(t.data, this.n, k, z.data, z.cols) };
         }
         const vectors = (data: Float64Array, cols: number) => Array.from({ length: cols }, (_, j) => Array.from({ length: this.n / this.d }, (_, i) => Array.from({ length: this.d }, (_, axis) => data[(i * this.d + axis) * cols + j])));
-        return { first_order: k, second_order: k && compatible.cols === 0 ? 'locked' : forms.some(h => norm(h) > 1e-8) && k ? 'inconclusive' : 'compatible', linear_compatible_dimension: compatible.cols, linear_compatible_tangents: vectors(compatible.data, compatible.cols), tangents: vectors(t.data, k), quadratic_forms: forms.map(h => Array.from({ length: k }, (_, i) => Array.from(h.slice(i * k, (i + 1) * k)))), rank: this.n - k, residual: this.error(this.x), basis: compatible };
+        const result = { first_order: k, second_order: k && compatible.cols === 0 ? 'locked' : forms.some(h => norm(h) > 1e-8) && k ? 'inconclusive' : 'compatible', linear_compatible_dimension: compatible.cols, linear_compatible_tangents: vectors(compatible.data, compatible.cols), tangents: vectors(t.data, k), quadratic_forms: forms.map(h => Array.from({ length: k }, (_, i) => Array.from(h.slice(i * k, (i + 1) * k)))), rank: this.n - k, residual: this.error(this.x), basis: compatible };
+        if(this.model.cables.length) return this.cableMobility(result,a,t);
+        return result;
     }
+    private cableMobility(result:MobilityState,j:Float64Array,rawTangent:{data:Float64Array;cols:number}){
+        const g=this.cableRows(this.x),ids=Array.from(g.values.keys()).filter(index=>{const[i,j,l]=this.model.cables[index];return(Math.sqrt(l)-this.distance(this.x,i,j))/this.model.scale<=1e-8;}),m=this.m,k=ids.length,t=result.basis;
+        if(!k||!t.cols)return {...result,motion_kind:'cone',active_cables:ids};
+        const aa=Float64Array.from(ids.flatMap(i=>Array.from(g.rows.slice(i*this.n,(i+1)*this.n)))),reduced=multiply(aa,k,this.n,rawTangent.data,rawTangent.cols),matrix=new Float64Array((rawTangent.cols+1)*k);
+        for(let i=0;i<rawTangent.cols;i++)for(let r=0;r<k;r++)matrix[i*k+r]=reduced[r*rawTangent.cols+i];matrix.fill(1,rawTangent.cols*k);
+        const rhs=new Float64Array(rawTangent.cols+1);rhs[rawTangent.cols]=1;const p=solve(matrix,rawTangent.cols+1,k,rhs,1e-10);
+        if(norm(Float64Array.from(multiply(matrix,rhs.length,k,p,1),(v,i)=>v-rhs[i]))>1e-8)return {...result,motion_kind:'cone',active_cables:ids};
+        try{const z=nullspace(matrix,rhs.length,k,1e-10),q=constrainedFit(z.data,k,z.cols,Float64Array.from(p,v=>-v),Float64Array.from(z.data,v=>-v),k,p),mu=Float64Array.from(p,(v,i)=>v+dot(z.data.subarray(i*z.cols,(i+1)*z.cols),q));
+        if(Math.min(...mu)<-1e-8||norm(Float64Array.from(multiply(matrix,rhs.length,k,mu,1),(v,i)=>v-rhs[i]))>1e-8)return result;
+        const force=new Float64Array(this.n);for(let i=0;i<this.n;i++)for(let r=0;r<k;r++)force[i]-=aa[r*this.n+i]*mu[r];
+        const jt=new Float64Array(this.n*m);for(let i=0;i<this.n;i++)for(let r=0;r<m;r++)jt[i*m+r]=j[r*this.n+i];
+        const lam=solve(jt,this.n,m,force,1e-10);if(norm(Float64Array.from(multiply(jt,this.n,m,lam,1),(v,i)=>v-force[i]))>1e-8)return result;
+        const forced=ids.map((_,i)=>i).filter(i=>mu[i]>1e-8),f=Float64Array.from(forced.flatMap(i=>Array.from(aa.slice(i*this.n,(i+1)*this.n)))),ker=nullspace(multiply(f,forced.length,this.n,t.data,t.cols),forced.length,t.cols,1e-8);let basis=multiply(t.data,this.n,t.cols,ker.data,ker.cols),cols=ker.cols;
+        const h=new Float64Array(cols*cols);
+        for(let row=0;row<m;row++)for(const[i,j,w]of this.model.rows[row].quadratic)for(let p=0;p<cols;p++)for(let q=0;q<cols;q++)h[p*cols+q]+=lam[row]*w*(basis[i*cols+p]*basis[j*cols+q]+basis[j*cols+p]*basis[i*cols+q]);
+        ids.forEach((index,r)=>{const[i,j]=this.model.cables[index];for(let axis=0;axis<this.d;axis++)for(let p=0;p<cols;p++)for(let q=0;q<cols;q++)h[p*cols+q]+=mu[r]*(basis[(i*this.d+axis)*cols+p]-basis[(j*this.d+axis)*cols+p])*(basis[(i*this.d+axis)*cols+q]-basis[(j*this.d+axis)*cols+q])/this.model.scale**2;});
+        if(cols){const ev=eigenvalues(h,cols);if(Math.min(...ev)>=-1e-8&&Math.max(...ev)>1e-8){const z=nullspace(h,cols,cols);basis=multiply(basis,this.n,cols,z.data,z.cols);cols=z.cols;}}
+        return {...result,basis:{data:basis,cols},linear_compatible_dimension:cols,linear_compatible_tangents:Array.from({length:cols},(_,q)=>Array.from({length:this.n/this.d},(_,i)=>Array.from({length:this.d},(_,a)=>basis[(i*this.d+a)*cols+q]))),second_order:cols?result.second_order:'locked',motion_kind:cols?'cone':'locked',active_cables:ids};
+        }catch{return {...result,motion_kind:'cone',active_cables:ids};}
+    }
+
     configuration(x = this.x): Config { return Object.fromEntries(this.model.keys.map((key, i) => [key, [...x.slice(i * this.d, (i + 1) * this.d), ...(this.d === 2 ? [0] : [])]])); }
     drag(ids: number[], targets: number[][], weights?: number[]) {
         const objective = (x: Float64Array) => { if (weights) {
@@ -170,7 +203,7 @@ export class Engine {
                         a[(weights ? axis : j * this.d + axis) * t.cols + c] += (weights ? weights[j] : 1) * t.data[(id * this.d + axis) * t.cols + c]; });
                 if (norm(a) < 1e-12)
                     break;
-                const delta = solve(a, r.length, t.cols, r), step = multiply(t.data, this.n, t.cols, delta, 1), length = norm(step);
+                const cable=this.cableRows(this.x);const delta = this.model.cables.length?constrainedFit(a,r.length,t.cols,r,multiply(cable.rows,cable.values.length,this.n,t.data,t.cols),cable.values.length,Float64Array.from(cable.values,v=>Math.max(-v,0)),this.workingSets.drag):solve(a, r.length, t.cols, r), step = multiply(t.data, this.n, t.cols, delta, 1), length = norm(step);
                 if (length < 1e-9 * this.model.scale)
                     break;
                 const cap = Math.min(1, .03 * this.model.scale / length);
@@ -218,7 +251,7 @@ export class Engine {
         if (this.previewBasisCache?.key !== cacheKey) this.previewBasisCache = {key:cacheKey,basis:nullspace(A,rows.length,free.length,1e-12)};
         const z = this.previewBasisCache!.basis, reg = 1e-4 / this.model.scale;
         const embed = (q: Float64Array) => { const x = base.slice(), delta = multiply(z.data, free.length, z.cols, q, 1); free.forEach((i, j) => x[i] += delta[j]); return x; };
-        const fit = this.fit(new Float64Array(z.cols), q => { const x = embed(q); return new Float64Array([...this.residual(x), ...free.map(i => reg * (x[i] - this.x[i]))]); }, q => { const j = this.jac(embed(q)), reduced = Float64Array.from(Array.from({ length: this.m }, (_, r) => free.map(i => j[r * this.n + i])).flat()), a = multiply(reduced, this.m, free.length, z.data, z.cols); return new Float64Array([...a, ...Array.from(z.data, v => reg * v)]); }, 100), x = embed(fit);
+        const fit = this.fit(new Float64Array(z.cols), q => { const x = embed(q); return new Float64Array([...this.residual(x), ...Array.from(this.cableRows(x).values,v=>Math.max(v,0)), ...free.map(i => reg * (x[i] - this.x[i]))]); }, q => { const j = this.jac(embed(q)), reduced = Float64Array.from(Array.from({ length: this.m }, (_, r) => free.map(i => j[r * this.n + i])).flat()), a = multiply(reduced, this.m, free.length, z.data, z.cols); const cable=this.cableRows(embed(q)),reducedCable=Float64Array.from(Array.from({length:cable.values.length},(_,r)=>free.map(i=>cable.values[r]>0?cable.rows[r*this.n+i]:0)).flat()),cj=multiply(reducedCable,cable.values.length,free.length,z.data,z.cols);return new Float64Array([...a,...cj, ...Array.from(z.data, v => reg * v)]); }, 100), x = embed(fit);
         const point = (i: number) => [...x.slice(i * this.d, (i + 1) * this.d), ...(this.d === 2 ? [0] : [])], severity = (v: number) => v / (.03 + v), points: Record<string, number> = Object.fromEntries(this.model.keys.map(k => [k, 0])), objects: Record<string, number> = {}, edges: Record<string, number> = {};
         for (const o of this.model.objects) {
             let worst = 0;
@@ -242,9 +275,9 @@ export class Engine {
             }
             else if (c.kind === 'coincident')
                 error = this.distance(x, c.a, c.b!) / this.model.scale;
-            else if (c.kind === 'distance') {
+            else if ((c.kind === 'distance' || c.kind === 'cable')) {
                 const l = Math.sqrt(c.value as unknown as number);
-                error = Math.abs(this.distance(x, c.a, c.b!) - l) / Math.max(l, .05 * this.model.scale);
+                error = (c.kind==='cable'?Math.max(0,this.distance(x,c.a,c.b!)-l):Math.abs(this.distance(x,c.a,c.b!)-l)) / Math.max(l, .05 * this.model.scale);
             }
             else if (c.kind === 'plane') {
                 const [p, n] = c.value as number[][], nn = norm(n), off = dot(a.map((v, i) => v - p[i]), n) / nn;

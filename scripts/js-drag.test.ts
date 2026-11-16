@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { Engine, type Model } from '../src/solver/engine';
-import { multiply, nullspace, nullspaces, solve, transpose } from '../src/solver/linalg';
+import { constrainedFit, multiply, nullspace, nullspaces, solve, transpose } from '../src/solver/linalg';
 const generated = Bun.spawnSync(['kinematics/.venv/bin/python', 'scripts/js-drag-fixtures.py']);
 if (generated.exitCode)
     throw Error(generated.stderr.toString());
@@ -81,4 +81,12 @@ test('Single-decomposition nullspaces retain left and right orthogonality',()=>{
  expect(Math.max(...multiply(a,2,3,spaces.right.data,2).map(Math.abs))).toBeLessThan(1e-10);
  expect(Math.max(...multiply(transpose(a,2,3),3,2,spaces.left.data,1).map(Math.abs))).toBeLessThan(1e-10);
  expect(nullspaces(new Float64Array(6),2,3).left.cols).toBe(2);
+});
+
+test('Cable working set releases when the objective moves inward',()=>{
+ const c=new Float64Array([1,0,0,1]),a=new Float64Array([1,0,0,1]),working:number[]=[];
+ expect(Array.from(constrainedFit(c,2,2,[2,.2],a,2,[1,1],working))).toEqual([1,.2]);
+ expect(working).toEqual([0]);
+ const inward=constrainedFit(c,2,2,[.2,.2],a,2,[1,1],working);
+ expect(inward[0]).toBeCloseTo(.2,10);expect(working).toEqual([]);
 });

@@ -414,8 +414,7 @@ The `hopf-link-four-cables-3d.py` preset reproduces perpendicular linked unit
 rings with four attachment pairs. Ring A is fixed in XY; ring B uses
 `ring(right, 1, normal=down)` to put its local XY frame in world XZ. The normal
 is normalized, with local X chosen by projecting world X into its plane (world
-Y when parallel). Connections currently use fixed-length rods, rather than
-unilateral cable inequalities or collision constraints.
+Y when parallel). Connections use ideal maximum-distance cables. Collision constraints are not modeled.
 
 Relative attachment points accept `label="a1"`, which persists with the scene
 and appears beside the moving point in both renderers. The Hopf preset declares
@@ -471,3 +470,45 @@ bun scripts/benchmark-js-drag.ts
 The browser check expects the isolated development server at localhost:5183.
 The benchmark reports warmed JS kernel median/p95 and a native Python reference
 sample; native Python timings are not Pyodide timings or end-to-end browser latency.
+
+## Ideal cables
+
+`cable(a, b, length=None, id=None)` connects body point references with a maximum
+length. Omitting `length` infers the exact initial separation; shorter separations
+are allowed. Negative lengths are rejected and zero-length cables become
+coincidences numerically. Cables are constraints, not extra rigid bodies.
+
+Python and JavaScript use separate equality and inequality rows, active-set
+constrained fits, and feasibility checks including normalized cable overstretch.
+Taut cable directions may shorten. Proper sign-valid stresses supply additional
+second-order restrictions without permanently turning cables into rods.
+Cable scenes display a direction cone rather than an exact DOF count. Numerical
+exploration corrects predictors against inequalities and Wander projects steering
+into allowed directions. Exact topology falls back to numerical analysis.
+
+Cables use thin teal connectors: solid when taut and dashed when slack. There is
+no simulated sag, elasticity, gravity, wrapping, or collision detection. In the
+Three.js renderer, cables use thin depth-tested cylinder segments. Hover an SVG
+cable to see its current and maximum lengths; attached points retain labels and
+source highlighting. The Hopf preset now uses four explicit cable constraints.
+
+Run `python -m pytest kinematics/tests/test_cables.py`, the JS parity suite,
+and `python scripts/check-cables-browser.py` (server on localhost:5183).
+
+Boundary solving keeps separate warm working sets for dragging, projection, and
+direction queries; stale warm sets retry cold and constraints release on inward
+motion. Python shares mobility results and cable gradients at identical poses,
+checking coordinate values and pin changes before reuse. Cable stress searches
+eliminate equality multipliers using the **raw** equality nullspace, solve for
+nonnegative cable multipliers in the smaller cable space, then recover and
+validate equality multipliers. Second-order forms use exact quadratic Hessians
+rather than shifted Jacobian evaluations. Wander retains the feasible projected
+displacement and uses its actual length for acceptance and animation time.
+
+Wander's **Boundary repulsion** slider adds an inward angular steering bias near
+taut cables. It ranges from Off to 4×, defaulting to a mild 0.5×, and updates the
+running walk as new frame batches are generated. The bias fades smoothly across
+2% of the scene scale, is averaged across nearby cable normals, and does not
+accumulate in the random steering state. It changes the heading rather than the
+speed; equality constraints and the feasible-direction cone still govern motion.
+Already generated buffered frames play before a live setting takes effect.

@@ -50,10 +50,12 @@ class ConstructionRenderer {
   >();
   edges: { a: string; b: string; cylinder: THREE.Mesh; ends: THREE.Mesh[] }[] =
     [];
+  cables: {constraint:SceneData["constraints"][number]; meshes:THREE.Mesh[]; material:THREE.MeshPhongMaterial; slack:boolean}[] = [];
   joints: { key: string; mesh: THREE.Mesh }[] = [];
   rings: { id: string; mesh: THREE.Mesh; radius: number }[] = [];
   labels: { object: SceneData["objects"][number]; element: HTMLSpanElement }[] =
     [];
+  cableScale = 1;
   radius: number;
   viewport = [0, 0];
   constructor(
@@ -70,6 +72,7 @@ class ConstructionRenderer {
     this.renderer.setClearColor(0, 0);
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.radius = extent * 0.019;
+    this.cableScale=scene.scale??1;
     this.world.add(new THREE.AmbientLight(0xffffff, 0.9));
     const light = new THREE.DirectionalLight(0xffffff, 1.7);
     light.position.set(3, 5, 6);
@@ -142,7 +145,8 @@ class ConstructionRenderer {
           }),
         );
       }
-      for (const key of keys) {
+      const jointKeys=[...new Set([...keys,...scene.constraints.flatMap(c=>[c.a,c.b].filter((key):key is string=>!!key&&key.startsWith(`${object.id}:`)))])];
+      for (const key of jointKeys) {
         if (
           object.kind === "ring" &&
           !scene.constraints.some((c) => c.a === key || c.b === key)
@@ -177,6 +181,11 @@ class ConstructionRenderer {
       label.textContent = object.id;
       labels.append(label);
       this.labels.push({ object, element: label });
+    }
+    for(const constraint of scene.constraints.filter(c=>c.kind==='cable')){
+      const material=new THREE.MeshPhongMaterial({color:getComputedStyle(canvas).getPropertyValue('--cad-cable').trim()});
+      const meshes=Array.from({length:16},()=>{const mesh=new THREE.Mesh(this.cylinder,material);this.world.add(mesh);return mesh;});
+      this.cables.push({constraint,meshes,material,slack:false});
     }
     this.recolor(canvas);
   }
@@ -266,6 +275,11 @@ class ConstructionRenderer {
         mesh.scale.setScalar(r);
       });
     }
+    for(const cable of this.cables){
+      const a=new THREE.Vector3(...configuration[cable.constraint.a]),b=new THREE.Vector3(...configuration[cable.constraint.b!]),delta=b.clone().sub(a),length=delta.length(),slack=((cable.constraint.length??0)-length)/this.cableScale>(cable.slack?1e-8:5e-8);cable.slack=slack;
+      const css=getComputedStyle(this.renderer.domElement);cable.material.color.set(css.getPropertyValue(activeIds?.has(cable.constraint.id)?'--accent':'--cad-cable').trim());
+      cable.meshes.forEach((mesh,i)=>{const t=(i+.5)/16;mesh.position.copy(a).addScaledVector(delta,t);mesh.quaternion.setFromUnitVectors(y,delta.clone().normalize());mesh.scale.set(r*.35,Math.max(length/16*(slack?.6:1),1e-8),r*.35);});
+    }
     for (const { key, mesh } of this.joints) {
       mesh.position.set(...configuration[key]);
       const meta = this.meshMetadata.get(mesh);
@@ -335,6 +349,7 @@ class ConstructionRenderer {
     return hit ? this.picks.get(hit.object)! : { keys: [] };
   }
   dispose() {
+    for(const cable of this.cables)cable.material.dispose();
     this.cylinder.dispose();
     this.sphere.dispose();
     for (const ring of this.rings) ring.mesh.geometry.dispose();

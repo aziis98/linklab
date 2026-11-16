@@ -72,7 +72,7 @@ def taut_chain_pins(scene: Scene) -> dict[str, ExactPoint]:
             ka, kb = f"{obj.id}:{a}", f"{obj.id}:{b}"
             edge(ka, kb, sum((x - y) ** 2 for x, y in zip(points[ka], points[kb])))
     for constraint in scene.constraints:
-        if constraint.kind == "distance":
+        if constraint.kind in ("distance", "cable"):
             edge(constraint.a, constraint.b, exact(constraint.value))
     graph: dict[str, list[tuple[str, float, sp.Expr]]] = {
         root(key): [] for key in points
