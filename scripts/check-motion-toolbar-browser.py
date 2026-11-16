@@ -22,9 +22,9 @@ with sync_playwright() as p:
     page.on("pageerror", lambda e: errors.append(str(e)))
     entry = {"id": "hopf-test", "name": "hopf.py", "body": source, "editedAt": 0}
     page.add_init_script(
-        "localStorage.setItem('cad-detect-free-motions.files.v2', JSON.stringify(["
+        "localStorage.setItem('linklab.files.v2', JSON.stringify(["
         + json.dumps(entry)
-        + "]));localStorage.setItem('cad-detect-free-motions.active.v1','hopf-test');"
+        + "]));localStorage.setItem('linklab.active.v1','hopf-test');"
     )
     page.goto(args.url)
     page.locator(".viewer strong").filter(has_text="numerical").wait_for(timeout=90000)

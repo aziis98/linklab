@@ -13,9 +13,9 @@ with sync_playwright() as p:
     )
     page = b.new_page(viewport={"width": 1400, "height": 900})
     page.add_init_script(
-        "localStorage.setItem('cad-detect-free-motions.files.v2',JSON.stringify(["
+        "localStorage.setItem('linklab.files.v2',JSON.stringify(["
         + json.dumps({"id": "cables", "name": "hopf.py", "body": source, "editedAt": 0})
-        + "]));localStorage.setItem('cad-detect-free-motions.active.v1','cables')"
+        + "]));localStorage.setItem('linklab.active.v1','cables')"
     )
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))

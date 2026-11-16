@@ -40,9 +40,9 @@ with sync_playwright() as p:
         data = {"id": "recording", "name": name, "body": scene["body"], "editedAt": 0}
         page.add_init_script(
             """if(location.hostname==='localhost'){
-            localStorage.setItem('cad-detect-free-motions.files.v2',JSON.stringify([__SCENE__]));
-            localStorage.setItem('cad-detect-free-motions.active.v1','recording');
-            localStorage.setItem('cad-detect-free-motions.split.v1','32');
+            localStorage.setItem('linklab.files.v2',JSON.stringify([__SCENE__]));
+            localStorage.setItem('linklab.active.v1','recording');
+            localStorage.setItem('linklab.split.v1','32');
         }""".replace("__SCENE__", json.dumps(data))
         )
         page.goto(args.url)

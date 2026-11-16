@@ -17,9 +17,9 @@ with sync_playwright() as p:
     page.on("pageerror", lambda e: errors.append(str(e)))
     data = {"id": "rings", "name": "concentric-rings.py", "body": source, "editedAt": 0}
     page.add_init_script(
-        "if(location.hostname==='localhost'){localStorage.setItem('cad-detect-free-motions.files.v2',JSON.stringify(["
+        "if(location.hostname==='localhost'){localStorage.setItem('linklab.files.v2',JSON.stringify(["
         + json.dumps(data)
-        + "]));localStorage.setItem('cad-detect-free-motions.active.v1','rings');localStorage.setItem('cad-detect-free-motions.split.v1','32');}"
+        + "]));localStorage.setItem('linklab.active.v1','rings');localStorage.setItem('linklab.split.v1','32');}"
     )
     page.goto("http://localhost:5173")
     page.locator(".viewer strong").filter(has_text="numerical").wait_for(timeout=90000)

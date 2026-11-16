@@ -10,9 +10,9 @@ with sync_playwright() as p:
     page = b.new_page(viewport={"width": 1400, "height": 900})
     entry = {"id": "repulsion", "name": "cable.py", "body": source, "editedAt": 0}
     page.add_init_script(
-        "localStorage.setItem('cad-detect-free-motions.files.v2',JSON.stringify(["
+        "localStorage.setItem('linklab.files.v2',JSON.stringify(["
         + json.dumps(entry)
-        + "]));localStorage.setItem('cad-detect-free-motions.active.v1','repulsion');window.repulsionMessages=[];const original=Worker.prototype.postMessage;Worker.prototype.postMessage=function(message,...args){if(message.request?.op==='wander_step')window.repulsionMessages.push(message.request.boundary_repulsion);return original.call(this,message,...args)}"
+        + "]));localStorage.setItem('linklab.active.v1','repulsion');window.repulsionMessages=[];const original=Worker.prototype.postMessage;Worker.prototype.postMessage=function(message,...args){if(message.request?.op==='wander_step')window.repulsionMessages.push(message.request.boundary_repulsion);return original.call(this,message,...args)}"
     )
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))

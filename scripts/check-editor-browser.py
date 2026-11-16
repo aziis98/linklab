@@ -21,9 +21,9 @@ with sync_playwright() as p:
         "editedAt": 0,
     }
     page.add_init_script(
-        "if(location.hostname==='localhost'){localStorage.setItem('cad-detect-free-motions.files.v2',JSON.stringify(["
+        "if(location.hostname==='localhost'){localStorage.setItem('linklab.files.v2',JSON.stringify(["
         + json.dumps(entry)
-        + "]));localStorage.setItem('cad-detect-free-motions.active.v1','editor');}"
+        + "]));localStorage.setItem('linklab.active.v1','editor');}"
     )
     page.goto("http://localhost:5173")
     page.locator(".viewer strong").filter(has_text="numerical").wait_for(timeout=90000)

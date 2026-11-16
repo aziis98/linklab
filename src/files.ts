@@ -6,8 +6,8 @@ export interface FileEntry {
   editedAt: number;
 }
 
-const FILES_KEY = "cad-detect-free-motions.files.v2";
-const ACTIVE_KEY = "cad-detect-free-motions.active.v1";
+const FILES_KEY = "linklab.files.v2";
+const ACTIVE_KEY = "linklab.active.v1";
 
 const read = <T>(key: string, fallback: T): T => {
   try {
@@ -230,7 +230,6 @@ export const checkReset = () => {
     try {
       localStorage.removeItem(FILES_KEY);
       localStorage.removeItem(ACTIVE_KEY);
-      localStorage.removeItem("cad-detect-free-motions.files.v1");
     } catch {
       /* ignore */
     }
@@ -340,9 +339,7 @@ for i, (a, b) in enumerate(zip(a_points, b_points)):
 export const loadFiles = () => {
   checkReset();
   const v2 = read<FileEntry[] | null>(FILES_KEY, null);
-  if (v2) return ensureExamples(v2);
-  const v1 = read<FileEntry[] | null>("cad-detect-free-motions.files.v1", null);
-  return ensureExamples(v1 || []);
+  return ensureExamples(v2 || []);
 };
 export const saveFiles = (files: FileEntry[]) => write(FILES_KEY, files);
 export const loadActiveId = () => {
