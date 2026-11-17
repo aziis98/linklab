@@ -20,7 +20,13 @@ import {
   type FileEntry,
 } from "@/files";
 import { Dropdown } from "./components/dropdown";
-import { request } from "@/pyodide";
+import {
+  getPyodideStatus,
+  request,
+  stop,
+  subscribePyodideStatus,
+  type PyodideStatus,
+} from "@/pyodide";
 
 type State = "idle" | "loading" | "ready" | "error";
 
@@ -51,7 +57,10 @@ export function App() {
     return fs[0]?.id ?? null;
   });
   const [state, setState] = useState<State>("idle");
-  const [version, setVersion] = useState("");
+  const [pyodideStatus, setPyodideStatus] = useState<PyodideStatus>(() =>
+    getPyodideStatus(),
+  );
+  const [initialBootSettled, setInitialBootSettled] = useState(false);
   const [solverMode, setSolverMode] = useState<"numerical" | "topological">(
     "numerical",
   );
@@ -75,10 +84,13 @@ export function App() {
     setFiles((fs) => ensureExamples(fs));
   }, []);
 
+  useEffect(() => subscribePyodideStatus(setPyodideStatus), []);
+
   useEffect(() => {
-    setState("ready");
-    setVersion("worker");
-  }, []);
+    if (scene !== null || (runError !== null && pyodideStatus.phase === "ready")) {
+      setInitialBootSettled(true);
+    }
+  }, [scene, runError, pyodideStatus.phase]);
 
   const active = useMemo(
     () => files.find((f) => f.id === activeId) ?? null,
@@ -188,8 +200,17 @@ export function App() {
           onDelete={removeFile}
         />
         <span class="bar__spacer" />
-        <span class="dot" data-state={state === "ready" ? "ok" : state} />
-        <span>{stateLabel[state]}</span>
+        <span
+          class="dot"
+          data-state={
+            pyodideStatus.phase === "error"
+              ? "error"
+              : state === "ready"
+                ? "ok"
+                : state
+          }
+        />
+        <span>{pyodideStatus.phase === "error" ? "error" : stateLabel[state]}</span>
         <Dropdown
           label="Scene dimension"
           value={String(dimension)}
@@ -263,6 +284,11 @@ export function App() {
               motionToolbar={motionToolbar}
               scene={scene}
               error={runError}
+              pyodideStatus={!initialBootSettled ? pyodideStatus : null}
+              onRetryPyodide={() => {
+                stop();
+                void run();
+              }}
               highlightElementId={activeElementId}
               onHoverElement={setActiveElementId}
             />
@@ -272,7 +298,14 @@ export function App() {
 
       <footer class="status">
         <span class="status__spacer" />
-        <span>pyodide {version || "—"}</span>
+        <span>
+          pyodide{" "}
+          {pyodideStatus.phase === "ready"
+            ? "ready"
+            : pyodideStatus.phase === "error"
+              ? "error"
+              : `${Math.round(pyodideStatus.progress * 100)}%`}
+        </span>
       </footer>
     </div>
   );

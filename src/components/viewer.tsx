@@ -6,7 +6,7 @@ import { ConstructionGrid } from "./construction-grid";
 import { ExplorationPanel, type Roadmap } from "./exploration-panel";
 import { MotionPopover } from "./motion-popover";
 import { Dropdown } from "./dropdown";
-import { request } from "../pyodide";
+import { request, type PyodideStatus } from "../pyodide";
 import { createCamera, type CameraSettings } from "../camera";
 const ThreeConstruction = lazy(() => import("./three-construction"));
 type V = [number, number, number];
@@ -97,12 +97,16 @@ export function Viewer({
   motionToolbar,
   scene,
   error,
+  pyodideStatus,
+  onRetryPyodide,
   highlightElementId,
   onHoverElement,
 }: {
   motionToolbar?: HTMLElement | null;
   scene: SceneData | null;
   error?: string | null;
+  pyodideStatus?: PyodideStatus | null;
+  onRetryPyodide?: () => void;
   highlightElementId?: string | string[] | null;
   onHoverElement?: (id: string | string[] | null) => void;
 }) {
@@ -765,6 +769,77 @@ export function Viewer({
       ),
     [orbits, roadmap, scene, pan, zoom, camera, size, fitted, perspective],
   );
+  if (pyodideStatus) {
+    const percent = Math.max(
+      0,
+      Math.min(100, Math.round(pyodideStatus.progress * 100)),
+    );
+    const mbText =
+      pyodideStatus.loadedBytes !== undefined
+        ? pyodideStatus.totalBytes !== undefined
+          ? `${(pyodideStatus.loadedBytes / (1024 * 1024)).toFixed(1)} / ${(pyodideStatus.totalBytes / (1024 * 1024)).toFixed(1)} MB`
+          : `${(pyodideStatus.loadedBytes / (1024 * 1024)).toFixed(1)} MB`
+        : null;
+    return (
+      <div
+        class="viewer"
+        ref={ref}
+        style={{
+          position: "relative",
+          height: "100%",
+          minHeight: 260,
+          overflow: "hidden",
+          background: "var(--cad-bg)",
+        }}
+      >
+        <div class="viewer__loading">
+          {pyodideStatus.phase === "error" ? (
+            <div class="viewer__loading-card">
+              <div class="viewer__loading-title">Something went wrong</div>
+              <details class="viewer__error-details">
+                <summary>Error details</summary>
+                <pre>{pyodideStatus.error || "Unknown error"}</pre>
+              </details>
+              {onRetryPyodide && (
+                <div>
+                  <button
+                    type="button"
+                    class="btn btn--primary"
+                    onClick={onRetryPyodide}
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div class="viewer__loading-card">
+              <div class="viewer__loading-row">
+                <span class="viewer__loading-label">{pyodideStatus.label}</span>
+                <span class="viewer__loading-meta">
+                  {mbText ? `${mbText} · ` : ""}
+                  {percent}%
+                </span>
+              </div>
+              <div
+                class="viewer__progress-track"
+                role="progressbar"
+                aria-label={pyodideStatus.label}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={percent}
+              >
+                <div
+                  class="viewer__progress-fill"
+                  style={{ width: `${percent}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
   return (
     <div
       class="viewer"
