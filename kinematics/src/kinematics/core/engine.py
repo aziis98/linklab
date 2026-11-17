@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 from scipy.linalg import null_space
 from scipy.optimize import least_squares
 
-from .model import Scene
+from .model import Rod, Scene, exact
 
 FloatArray = NDArray[np.float64]
 Configuration = dict[str, list[float]]
@@ -98,10 +98,28 @@ class Engine:
                         ],
                     )
                 )
-            for i, j in combinations(rigid_ids, 2):
-                self.lengths.append(
-                    (i, j, float(np.sum((self.initial[i] - self.initial[j]) ** 2)))
-                )
+            if isinstance(o, Rod) and o.rest_length is not None:
+                rest = float(exact(o.rest_length))
+                for n1, n2 in combinations(o.material_names, 2):
+                    pair = {n1, n2}
+                    if pair == {"a", "b"}:
+                        squared = rest**2
+                    elif "a" in pair or "b" in pair:
+                        squared = (rest / 2) ** 2 + 1.0
+                    else:
+                        squared = 2.0
+                    self.lengths.append(
+                        (
+                            self.index[f"{o.id}:{n1}"],
+                            self.index[f"{o.id}:{n2}"],
+                            squared,
+                        )
+                    )
+            else:
+                for i, j in combinations(rigid_ids, 2):
+                    self.lengths.append(
+                        (i, j, float(np.sum((self.initial[i] - self.initial[j]) ** 2)))
+                    )
             if o.fixed:
                 for i in ids:
                     self.pins[i] = self.initial[i].copy()

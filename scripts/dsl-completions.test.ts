@@ -68,6 +68,9 @@ describe("Scene DSL completion", () => {
     expect(
       complete("r=rod(origin,up, fi")!.options.map((o) => o.label),
     ).toContain("fixed");
+    expect(
+      complete("r=rod(origin,up, le")!.options.map((o) => o.label),
+    ).toContain("length");
     expect(complete("scene_dimension(")!.options.map((o) => o.label)).toEqual([
       "2",
       "3",

@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from kinematics.core.geometry import circle_circle, line_line, sphere_sphere
 
-from kinematics import Engine, Session, build_scene
+from kinematics import Engine, Scene, Session, build_scene
 
 LOCK = """
 r1=rod(left*2,origin,id="r1")
@@ -420,3 +420,77 @@ def test_concentric_rings_have_two_planar_dofs():
     c = np.array(p["inner:origin"])
     assert np.linalg.norm(np.array(p["inner:x"]) - c) == pytest.approx(1.5, abs=1e-8)
     assert np.linalg.norm(np.array(p["inner:y"]) - c) == pytest.approx(1.5, abs=1e-8)
+
+
+def test_rod_rest_length_assembly_frames_topology_and_roundtrip():
+    # Planar rod with explicit length and relative points
+    scene = build_scene(
+        'r=rod(origin,right,id="r",length=2.5)\nmid_off=r.rel(0.5,0.25)\npin(r.start,origin)'
+    )
+    assert float(scene.objects[0].rest_length) == 2.5
+    restored = Scene.from_dict(scene.to_dict())
+    assert restored.objects[0].rest_length == scene.objects[0].rest_length
+    e = Engine(restored)
+    e.assemble()
+    cfg = e.configuration()
+    a, b = np.array(cfg["r:a"]), np.array(cfg["r:b"])
+    assert np.linalg.norm(b - a) == pytest.approx(2.5, abs=1e-9)
+    # Relative point stays at exact world offset (0.5, 0.25) from midpoint
+    center = (a + b) / 2
+    axis = (b - a) / 2.5
+    perp = np.array([-axis[1], axis[0], 0.0])
+    rel_pt = np.array(cfg[f"r:{scene.objects[0].relative_points and next(iter(scene.objects[0].relative_points))}"])
+    np.testing.assert_allclose(rel_pt, center + 0.5 * axis + 0.25 * perp, atol=1e-9)
+
+    # 3D rod with frame="full" and explicit length
+    e3 = Engine(
+        build_scene(
+            'scene_dimension(3)\nr=rod(origin,right,id="r",frame="full",length=3)\npin(r.start,origin)'
+        )
+    )
+    e3.assemble()
+    c3 = e3.configuration()
+    assert np.linalg.norm(np.array(c3["r:b"]) - np.array(c3["r:a"])) == pytest.approx(
+        3.0, abs=1e-9
+    )
+    assert e3.error(e3.current) < 1e-9
+
+    # Topological solver respects rod rest_length (3-4-5 triangle)
+    session = Session()
+    snap = session.run(
+        'g=rod(origin,right*3,id="g",fixed=True)\n'
+        'a=rod(origin,up,id="a",length=4)\n'
+        'b=rod(g.end,up,id="b",length=5)\n'
+        'pin(a.start,origin)\n'
+        'coincident(a.end,b.end)\n'
+        'coincident(b.start,g.end)',
+        dimension=2,
+        mode="topological",
+    )
+    assert snap["motion"]["status"] == "certified"
+    assert snap["motion"]["cells"][0]["dimension"] == 0
+    assert np.linalg.norm(
+        np.array(snap["configuration"]["a:b"]) - np.array(snap["configuration"]["a:a"])
+    ) == pytest.approx(4.0, abs=1e-9)
+
+    # Validation errors
+    with pytest.raises(ValueError):
+        build_scene("rod(origin,right,length=0)")
+    with pytest.raises(ValueError):
+        build_scene("rod(origin,right,length=-2)")
+    with pytest.raises(ValueError):
+        build_scene("rod(origin,right,fixed=True,length=2)")
+    with pytest.raises(ValueError):
+        build_scene("r=rod(origin,right,length=2)\nfixed(r)")
+
+    # Cable with shorter rest length assembles within limit
+    ec = Engine(
+        build_scene(
+            'a=body({},fixed=True)\nb=body({},center=right*3)\ncable(a.origin,b.origin,length=1.5)'
+        )
+    )
+    ec.assemble()
+    cc = ec.configuration()
+    assert np.linalg.norm(
+        np.array(cc["body2:origin"]) - np.array(cc["body1:origin"])
+    ) <= 1.5 + 1e-9

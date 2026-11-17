@@ -193,7 +193,17 @@ class RigidBody(SourceInfo):
             and (local[1] != 0 or local[2] != 0)
         ):
             raise ValueError("off-axis points require rod(..., frame='full')")
-        world = tuple(sp.simplify(v) for v in center + axes * sp.Matrix(local))
+        effective_local = local
+        if (
+            isinstance(self, Rod)
+            and self.rest_length is not None
+            and local != (-self.length / 2, 0, 0)
+            and local != (self.length / 2, 0, 0)
+        ):
+            effective_local = (local[0] * self.length / self.rest_length, local[1], local[2])
+        world = tuple(
+            sp.simplify(v) for v in center + axes * sp.Matrix(effective_local)
+        )
         for name, position in self.points.items():
             if all(sp.simplify(a - b) == 0 for a, b in zip(position, world)):
                 if label is not None:
@@ -207,8 +217,12 @@ class RigidBody(SourceInfo):
         names = self.material_names
         matrix = sp.Matrix([[*self.points[n], 1] for n in names]).T
         if self.frame_kind == FrameKind.AXIAL_X and self.dimension == 2:
-            length = sp.sqrt(
-                sum((a - b) ** 2 for a, b in zip(self.points["a"], self.points["b"]))
+            length = (
+                exact(self.rest_length)
+                if isinstance(self, Rod) and self.rest_length is not None
+                else sp.sqrt(
+                    sum((a - b) ** 2 for a, b in zip(self.points["a"], self.points["b"]))
+                )
             )
             rotation = sp.Matrix([[0, -1, 0], [1, 0, 0], [0, 0, 0]])
             offset = (local[0] * sp.eye(3) + local[1] * rotation) / length
@@ -256,6 +270,7 @@ class RigidBody(SourceInfo):
 @dataclass
 class Rod(RigidBody):
     frame_kind: FrameKind = FrameKind.AXIAL_X
+    rest_length: Scalar | None = None
 
     @property
     def length(self) -> sp.Expr:
@@ -377,6 +392,7 @@ class Scene:
         fixed: bool = False,
         frame: str = "axial",
         normal: Vec | Sequence[Scalar] | None = None,
+        length: Scalar | None = None,
     ) -> RigidObject:
         ident = id or f"r{len(self.objects) + 1}"
         if any(o.id == ident for o in self.objects):
@@ -388,6 +404,9 @@ class Scene:
             raise ValueError("use dimension=3 for spatial geometry")
         if frame not in ("axial", "full"):
             raise ValueError("frame must be 'axial' or 'full'")
+        rest_length = exact(length) if length is not None else None
+        if rest_length is not None and rest_length <= 0:
+            raise ValueError("rod length must be positive")
         obj = Rod(
             ident,
             points,
@@ -395,7 +414,10 @@ class Scene:
             "rod",
             self.dimension or (3 if any(p[2] != 0 for p in points.values()) else 2),
             FrameKind.AXIAL_X,
+            rest_length=rest_length,
         )
+        if fixed and rest_length is not None and sp.simplify(rest_length - obj.length) != 0:
+            raise ValueError("fixed rod length must match endpoint distance")
         if frame == "full":
             obj.frame_kind = FrameKind.FULL
             a0, b0 = sp.Matrix(points["a"]), sp.Matrix(points["b"])
@@ -543,6 +565,12 @@ class Scene:
         return c
 
     def fixed(self, obj: RigidObject) -> None:
+        if (
+            isinstance(obj, Rod)
+            and obj.rest_length is not None
+            and sp.simplify(obj.rest_length - obj.length) != 0
+        ):
+            raise ValueError("fixed rod length must match endpoint distance")
         obj.fixed = True
 
     def parallel(
@@ -584,6 +612,11 @@ class Scene:
                         n: {k: encode(w) for k, w in weights.items()}
                         for n, weights in o.affine_points.items()
                     },
+                    **(
+                        {"rest_length": encode(o.rest_length)}
+                        if isinstance(o, Rod) and o.rest_length is not None
+                        else {}
+                    ),
                     **({"source_span": list(o.source_span)} if o.source_span else {}),
                 }
                 for o in self.objects
@@ -630,6 +663,8 @@ class Scene:
                 },
             )
             obj.point_labels = dict(o.get("point_labels", {}))
+            if isinstance(obj, Rod) and o.get("rest_length") is not None:
+                obj.rest_length = exact(o["rest_length"])
             if (
                 obj.kind == "ring"
                 and "bottom" in obj.points

@@ -13,6 +13,7 @@ import numpy as np
 import sympy as s
 
 from .engine import Engine
+from .model import exact
 
 
 class Unsupported(ValueError):
@@ -69,8 +70,11 @@ def exact_graph(engine):
             if o.fixed:
                 fixed[r] = s.Matrix(p[:2])
         a, b = (roots[f"{o.id}:{n}"] for n in ("a", "b"))
-        d = s.Matrix(o.points["a"][:2]) - s.Matrix(o.points["b"][:2])
-        edges.append((a, b, s.simplify(d.dot(d))))
+        if o.rest_length is not None:
+            edges.append((a, b, s.simplify(exact(o.rest_length) ** 2)))
+        else:
+            d = s.Matrix(o.points["a"][:2]) - s.Matrix(o.points["b"][:2])
+            edges.append((a, b, s.simplify(d.dot(d))))
     for c in scene.constraints:
         if c.kind == "pin":
             r = roots[c.a]

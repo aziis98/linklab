@@ -494,6 +494,7 @@ export function dslCompletionSource(
             detail: "ground this object",
           })]),
           ...(constructor === "rod" ? [
+            snippetCompletion('length=${1:1}${0}', { label: "length", type: "property", detail: "rod rest length" }),
             snippetCompletion('frame="${1:full}"${0}', { label: "frame", type: "property", detail: "axial (default) or full material frame" }),
             snippetCompletion('normal=${1:forward}${0}', { label: "normal", type: "property", detail: "initial local XY plane normal" }),
           ] : constructor === "ring" ? [
